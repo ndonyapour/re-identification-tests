@@ -1,0 +1,19 @@
+[project]
+name = "re-identification"
+version = "0.1.0"
+description = "General tools for medical imaging"
+readme = "README.md"
+authors = [
+    { name = "Nazanin Donyapour", email = "nazanin.donyapour@axleinfo.com" }
+]
+
+requires-python = ">=3.11"
+dependencies = [
+    "antspyx>=0.6.1",
+    "intensity-normalization>=2.2.4",
+    "tqdm>=4.67.1",
+    "nyxusmed @ git+ssh://git@github.com/AretixOS/nyxusmed.git",
+    "tabulate>=0.9.0",
+]
+
+
