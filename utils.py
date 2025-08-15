@@ -2,7 +2,7 @@ import os
 import numpy as np
 
 import nibabel as nib
-from nyxusmed import Nyxus3DFeatureExtractor
+from nyxusmed import Nyxus3DFeatureExtractor, Nyxus2DFeatureExtractor
 from intensity_normalization import NyulNormalizer, WhiteStripeNormalizer, KDENormalizer
 from intensity_normalization.adapters.images import create_image 
 from intensity_normalization.adapters.io import  save_image
@@ -73,6 +73,36 @@ def run_3d_extraction(input_dir: str, seg_dir: str, out_dir: str) -> None:
             print(f"Running 3D feature extraction for {input_file.name}...")
             extractor.run_parallel()
             print(f"3D results saved to: {outpath}")
+
+def run_2d_extraction(input_dir: str, out_dir: str) -> None:
+    """Test 2D feature extraction.
+    
+    Args:
+        input_files: Path pattern for input intensity images
+        seg_files: Path pattern for segmentation masks
+        out_dir: Output directory for results
+    """
+    if not os.path.exists(out_dir):
+        os.makedirs(out_dir)
+        
+    input_dir = Path(input_dir)
+
+    for input_file in tqdm(input_dir.iterdir()):
+        if str(input_file).endswith(".nii.gz") or str(input_file).endswith(".nii"):
+            outpath = Path(out_dir)
+            extractor = Nyxus2DFeatureExtractor(
+                input_file=str(input_file),
+                out_dir=outpath,
+                features=["ALL"], # or ["MEAN", "AREA_PIXELS_COUNT"] individual features
+                neighbor_distance=5,
+                pixels_per_micron=1.0,
+                agg_types=["mean"],
+                per_slice=True,
+                out_format="csv")
+            print(f"Running 2D feature extraction for {input_file.name}...")
+            extractor.run_parallel()
+            print(f"2D results saved to: {outpath}/{input_file.stem}.csv")
+
 
 def get_subject_id(nifti_img, filename: str = '') -> str:
     header = nifti_img.header
