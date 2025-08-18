@@ -6,6 +6,15 @@ import pickle as pkl
 import numpy as np
 import pandas as pd
 
+
+from PIL import Image
+
+def pil_loader(path: str) -> Image.Image:
+    with open(path, "rb") as f:
+        img = Image.open(f)
+        return img.convert("RGB")
+    
+
 def run_2d_extraction(input_dir: str, out_dir: str) -> None:
     """Test 2D feature extraction.
     
@@ -58,8 +67,8 @@ def save_features(image_dir, feature_dir, output_path):
         pkl.dump(latent_dict, f_out)
 
 if __name__ == "__main__":
-    input_dir = "/home/ubuntu/data/GRAPE/CFPs"
-    out_dir = "/home/ubuntu/projects/re_identification/my_features/GRAPE_Nyxus_2D_features"
-    output_path = "/home/ubuntu/projects/re_identification/my_features/GRAPE_Nyxus_2D_features.pkl"
+    input_dir = "./GRAPE/CFPs"
+    out_dir = "./features/GRAPE_Nyxus_2D_features"
+    output_path = "./features/GRAPE_Nyxus_2D_features.pkl"
     run_2d_extraction(input_dir, out_dir)
     save_features(input_dir, out_dir, output_path)
