@@ -1,74 +1,162 @@
-from nyxus import Nyxus
+import nyxus
 import os
 from pathlib import Path
 from tqdm import tqdm
 import pickle as pkl
 import numpy as np
 import pandas as pd
-
-
 from PIL import Image
+from multiprocessing import Pool, cpu_count
+from functools import partial
+import time
+from sklearn.neighbors import NearestNeighbors
+from sklearn.preprocessing import StandardScaler
 
 def pil_loader(path: str) -> Image.Image:
     with open(path, "rb") as f:
         img = Image.open(f)
         return img.convert("RGB")
-    
 
-def run_2d_extraction(input_dir: str, out_dir: str) -> None:
-    """Test 2D feature extraction.
+def save_features_pkl(image_dir:str, features_dir: str, out_path: str) -> None:
+    """Save features to a pickle file.
     
     Args:
-        input_files: Path pattern for input intensity images
-        seg_files: Path pattern for segmentation masks
+        features_dir: Directory containing the features
         out_dir: Output directory for results
+    """
+    image_files = [f for f in os.listdir(image_dir) if f.endswith(('.jpg', '.jpeg'))]
+    features = []
+    for image_file in image_files:
+        image_path = os.path.join(image_dir, image_file)
+        feature_path = os.path.join(features_dir, image_file.replace('.jpg', '.csv').replace('.jpeg', '.csv'))
+        # Read CSV without using first column as index
+        latent_features = pd.read_csv(feature_path, usecols=lambda x: x != 'Unnamed: 0')
+        # Or if you want to explicitly drop the index column if it was saved:
+        # latent_features = pd.read_csv(feature_path).drop('Unnamed: 0', axis=1, errors='ignore')
+        numeric_cols = latent_features.select_dtypes(include=[np.number]).columns
+        feature_array = latent_features[numeric_cols].iloc[0].values
+        features.append(feature_array)
+
+    # Standardize the features
+   
+    scaler = StandardScaler()
+    features = scaler.fit_transform(features)
+
+    features_dict = [] 
+    for image_file, feature in zip(image_files, features):
+        features_dict.append({'path': image_file, 'features': feature})
+    
+    if not os.path.exists(os.path.dirname(out_path)):
+        os.makedirs(os.path.dirname(out_path))
+
+    with open(out_path, 'wb') as f:
+        pkl.dump(features_dict, f)
+
+
+
+def process_image(image_file: str, input_dir: str, out_dir: str, nyx: nyxus.Nyxus) -> dict:
+    """Process a single image and extract features.
+    
+    Args:
+        image_file: Name of the image file
+        input_dir: Directory containing the image
+        nyx: Nyxus instance for feature extraction
+        
+    Returns:
+        dict: Dictionary containing image path and extracted features
+    """
+    image_path = os.path.join(input_dir, image_file)
+    image = pil_loader(image_path)
+    image = np.array(image)
+    image_gray = image.mean(axis=2)  # Average across RGB channels
+    mask = np.ones(image_gray.shape)
+    
+    print(f"Processing {image_file}")
+    print(f"Image shape: {image_gray.shape}")
+    print(f"Mask shape: {mask.shape}")
+
+    latent_features = nyx.featurize(image_gray, mask)
+    latent_features.to_csv(os.path.join(out_dir, image_file.replace('.jpg', '.csv').replace('.jpeg', '.csv')), index=False)
+
+
+def run_2d_extraction(input_dir: str, out_dir: str, feature_types: list=["*WHOLESLIDE*"]) -> None:
+    """Extract 2D features using parallel processing.
+    
+    Args:
+        input_dir: Path for input intensity images
+        out_dir: Output directory for results
+        output_path: Path to save extracted features
     """
     if not os.path.exists(out_dir):
         os.makedirs(out_dir)
-        
-    #input_dir = Path(input_dir)
-    nyx = Nyxus (["*ALL*"])
-    #nyx.set_params(features=["ALL"], neighbor_distance=5, pixels_per_micron=1.0)
-    features = nyx.featurize_directory(input_dir)
-    # for input_file in tqdm(input_dir.iterdir()):
-    #     if str(input_file).endswith(".jpg") or str(input_file).endswith(".jpeg"):
-    #         outpath = Path(out_dir)
-    #         print(f"Running 2D feature extraction for {input_file.name}...")
-    #         nyxus = Nyxus()
-    #         nyx = Nyxus(features=["ALL"])
-    #         nyx_params = {
-    #             "neighbor_distance": 5,
-    #             "pixels_per_micron": 1.0,
-    #         }
-    #         nyx.set_params(**nyx_params)
-    #         int_slice = int_slice.astype(np.float32)
-    #         mk_slice = mk_slice.astype(np.uint8)
-    #         feats_df = nyx.featurize(int_slice, mk_slice)
-    #         feats_df.to_csv(outpath / f"{input_file.stem}.csv", index=False)
+
+    # Initialize Nyxus
+    nyx = nyxus.Nyxus(feature_types,  n_feature_calc_threads=5)
     
-    #         print(f"2D results saved to: {outpath}/{input_file.stem}.csv")
+    # Get list of image files
+    image_files = [f for f in os.listdir(input_dir) if f.endswith(('.jpg', '.jpeg'))]
+    
+    # Determine number of processes (use 75% of available CPUs)
+    num_processes = max(1, int(cpu_count() * 0.75))
+    print(f"Using {num_processes} processes")
 
+    # Create partial function with fixed arguments
+    process_func = partial(process_image, input_dir=input_dir, out_dir=out_dir, nyx=nyx)
+    
+    # Process images in parallel
+    with Pool(processes=num_processes) as pool:
+        latent_dict = list(tqdm(
+            pool.imap(process_func, image_files),
+            total=len(image_files),
+            desc="Extracting features"
+        ))
 
-def save_features(image_dir, feature_dir, output_path):
-    """Save the features"""
-    image_files = [f for f in os.listdir(image_dir) if f.endswith('.jpg') or f.endswith('.jpeg')]
-    for image_file in image_files:
-        image_path = os.path.join(image_dir, image_file)
-        feature_path = os.path.join(feature_dir, image_file.replace('.jpg', '.csv').replace('.jpeg', '.csv'))
-        latent_features = pd.read_csv(feature_path)
-        latent_dict.append({'path': image_path, 'features': latent_features})
-
-    latent_features = np.concatenate(latent_features)
-    latent_dict: list = [{'path': path, 'features': feats} for path, feats in zip(data.paths, latent_features)]
-
-    # save features
-
-    with open(output_path, 'wb') as f_out:
-        pkl.dump(latent_dict, f_out)
+def calculate_l2_distance(features_dir: str) -> dict:
+    """Calculate L2 distance between two images.
+    
+    Args:
+        features_dir: Directory containing the features
+        output_path: Path to save the results
+    """
+    features_files = [f for f in os.listdir(features_dir) if f.endswith(('.csv'))]
+    features_list = []
+    for feature_file in features_files:
+        feature_path = os.path.join(features_dir, feature_file)
+        # Read CSV without using first column as index
+        latent_features = pd.read_csv(feature_path, usecols=lambda x: x != 'Unnamed: 0')
+        # Or if you want to explicitly drop the index column if it was saved:
+        # latent_features = pd.read_csv(feature_path).drop('Unnamed: 0', axis=1, errors='ignore')
+        numeric_cols = latent_features.select_dtypes(include=[np.number]).columns
+        feature_array = latent_features[numeric_cols].iloc[0].values
+        import pdb; pdb.set_trace()
+        features_list.append(feature_array)
+    features = np.array(features_list)
+    import pdb; pdb.set_trace()
+    nn = NearestNeighbors(n_neighbors=11, metric="euclidean")  # 1 extra for self
+    nn.fit(features)
+    dists, idxs = nn.kneighbors(features) 
+    import pdb; pdb.set_trace()
+    # idxs[i] lists neighbors for query i (self at 0)
 
 if __name__ == "__main__":
-    input_dir = "./GRAPE/CFPs"
-    out_dir = "./features/GRAPE_Nyxus_2D_features"
-    output_path = "./features/GRAPE_Nyxus_2D_features.pkl"
-    run_2d_extraction(input_dir, out_dir)
-    save_features(input_dir, out_dir, output_path)
+    images_input_dir = "/home/ubuntu/data/GRAPE/CFPs"
+    features_out_dir = "/home/ubuntu/projects/re_identification/my_features/GRAPE_Nyxus_2D_wholeSlide_csv_features"
+    output_path = "/home/ubuntu/projects/re_identification/my_features/GRAPE_Nyxus/WholeSlide_2D_features.pkl"
+    # # run_2d_extraction(input_dir, out_dir, feature_types=["*WHOLESLIDE*", "-*SGEOMOMS*", "-GABOR"])
+
+    save_features_pkl(images_input_dir, features_out_dir, output_path)
+    #calculate_l2_distance("./output")
+    # benchmarking 
+    # input_image = "100_OD_1.jpg"
+    # time_start = time.time()
+    # out_dir = "./output"
+    # if not os.path.exists(out_dir):
+    #     os.makedirs(out_dir)
+    # feature_types =  [["*ALL*"]] #, ["*WHOLESLIDE*", "-*SGEOMOMS*", "-GABOR"]] # ["*WHOLESLIDE*"] #["*ALL*", "WholeSlide"]
+    # for idx, feature_type in enumerate(feature_types):
+    #     print(feature_type)
+    #     nyx = nyxus.Nyxus(feature_type,  n_feature_calc_threads=5)
+    #     process_image(input_image, images_input_dir, out_dir, nyx)
+    # print(f"Saved to {os.path.join(out_dir, input_image.replace('.jpg', '.csv').replace('.jpeg', '.csv'))}")
+    # time_end = time.time()
+    # print(f"Time taken: {time_end - time_start} seconds")
