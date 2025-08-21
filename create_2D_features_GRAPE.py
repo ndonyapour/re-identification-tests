@@ -138,25 +138,47 @@ def calculate_l2_distance(features_dir: str) -> dict:
     import pdb; pdb.set_trace()
     # idxs[i] lists neighbors for query i (self at 0)
 
-if __name__ == "__main__":
-    images_input_dir = "/home/ubuntu/data/GRAPE/CFPs"
-    features_out_dir = "/home/ubuntu/projects/re_identification/my_features/GRAPE_Nyxus_2D_wholeSlide_csv_features"
-    output_path = "/home/ubuntu/projects/re_identification/my_features/GRAPE_Nyxus/WholeSlide_2D_features.pkl"
-    # # run_2d_extraction(input_dir, out_dir, feature_types=["*WHOLESLIDE*", "-*SGEOMOMS*", "-GABOR"])
+def benchmark_2d_extraction(input_dir: str, out_dir: str, feature_types: list=["*WHOLESLIDE*"], n_tests=10) -> None:
+    """Benchmark 2D extraction.
+    
+    Args:
+        input_dir: Path for input intensity images
+        out_dir: Output directory for results
+        output_path: Path to save extracted features
+    """
 
-    save_features_pkl(images_input_dir, features_out_dir, output_path)
-    #calculate_l2_distance("./output")
-    # benchmarking 
-    # input_image = "100_OD_1.jpg"
-    # time_start = time.time()
-    # out_dir = "./output"
-    # if not os.path.exists(out_dir):
-    #     os.makedirs(out_dir)
-    # feature_types =  [["*ALL*"]] #, ["*WHOLESLIDE*", "-*SGEOMOMS*", "-GABOR"]] # ["*WHOLESLIDE*"] #["*ALL*", "WholeSlide"]
-    # for idx, feature_type in enumerate(feature_types):
-    #     print(feature_type)
-    #     nyx = nyxus.Nyxus(feature_type,  n_feature_calc_threads=5)
-    #     process_image(input_image, images_input_dir, out_dir, nyx)
-    # print(f"Saved to {os.path.join(out_dir, input_image.replace('.jpg', '.csv').replace('.jpeg', '.csv'))}")
-    # time_end = time.time()
-    # print(f"Time taken: {time_end - time_start} seconds")
+    # Initialize Nyxus
+    nyx = nyxus.Nyxus(feature_types,  n_feature_calc_threads=5)
+    
+    # Get list of image files
+    image_files = [f for f in os.listdir(input_dir) if f.endswith(('.jpg', '.jpeg'))]
+
+    # Determine number of processes (use 75% of available CPUs)
+    random_indices = np.random.choice(len(image_files), size=n_tests, replace=False)
+    total_time = 0
+    for idx in random_indices:
+        time_start = time.time()
+        image_file = image_files[idx]
+        process_image(image_file, input_dir, out_dir, nyx)
+        time_end = time.time()
+        total_time += time_end - time_start
+    print(f"Total time taken: {total_time} seconds")
+    print(f"Average time per image: {total_time / n_tests} seconds")
+
+
+if __name__ == "__main__":
+    images_input_dir = "./GRAPE/CFPs"
+    features_out_dir = "./GRAPE_Nyxus_ALL/GRAPE_Nyxus_2D_ALL_features"
+    # output_path = "./GRAPE_Nyxus_ALL/WholeSlide_2D_features.pkl"
+    # start_time = time.time()
+    # run_2d_extraction(images_input_dir, features_out_dir, feature_types=["*ALL*"])
+
+    # save_features_pkl(images_input_dir, features_out_dir, output_path)
+
+    # end_time = time.time()
+    # print(f"Time taken: {(end_time - start_time)/60} minutes")
+    # print(f"Average time per image: {(end_time - start_time)/60 / 631} minutes")
+
+    output_path = "./output"
+    benchmark_2d_extraction(images_input_dir, output_path, feature_types=["*ALL*"], n_tests=10)
+
