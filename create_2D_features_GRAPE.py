@@ -30,15 +30,18 @@ def save_features_pkl(image_dir:str, features_dir: str, out_path: str) -> None:
         image_path = os.path.join(image_dir, image_file)
         feature_path = os.path.join(features_dir, image_file.replace('.jpg', '.csv').replace('.jpeg', '.csv'))
         # Read CSV without using first column as index
-        latent_features = pd.read_csv(feature_path, usecols=lambda x: x != 'Unnamed: 0')
+        latent_features = pd.read_csv(feature_path, 
+                     engine='python',  # More robust parsing
+                     encoding='utf-8', sep=',', usecols=lambda x: x != 'Unnamed: 0')  
+        # latent_features = df.drop(columns=['Unnamed: 0'])
         # Or if you want to explicitly drop the index column if it was saved:
         # latent_features = pd.read_csv(feature_path).drop('Unnamed: 0', axis=1, errors='ignore')
         numeric_cols = latent_features.select_dtypes(include=[np.number]).columns
         feature_array = latent_features[numeric_cols].iloc[0].values
+       
         features.append(feature_array)
 
     # Standardize the features
-   
     scaler = StandardScaler()
     features = scaler.fit_transform(features)
 
@@ -53,8 +56,8 @@ def save_features_pkl(image_dir:str, features_dir: str, out_path: str) -> None:
         pkl.dump(features_dict, f)
 
 
-
-def process_image(image_file: str, input_dir: str, out_dir: str, nyx: nyxus.Nyxus) -> dict:
+#  nyx: nyxus.Nyxus=None
+def process_image(image_file: str, input_dir: str, out_dir: str, feature_types: list=["*WHOLESLIDE*"]) -> dict:
     """Process a single image and extract features.
     
     Args:
@@ -65,18 +68,23 @@ def process_image(image_file: str, input_dir: str, out_dir: str, nyx: nyxus.Nyxu
     Returns:
         dict: Dictionary containing image path and extracted features
     """
+    # import pdb; pdb.set_trace()
+    nyx = nyxus.Nyxus(feature_types,  n_feature_calc_threads=5)
     image_path = os.path.join(input_dir, image_file)
     image = pil_loader(image_path)
     image = np.array(image)
     image_gray = image.mean(axis=2)  # Average across RGB channels
     mask = np.ones(image_gray.shape)
-    
+    #import pdb; pdb.set_trace()
+    #print("nyx.feature_types", nyx.features)
     print(f"Processing {image_file}")
     print(f"Image shape: {image_gray.shape}")
     print(f"Mask shape: {mask.shape}")
 
     latent_features = nyx.featurize(image_gray, mask)
+    print(latent_features.shape, "latent_features.shape before saving")
     latent_features.to_csv(os.path.join(out_dir, image_file.replace('.jpg', '.csv').replace('.jpeg', '.csv')), index=False)
+    print(f"Saved to {os.path.join(out_dir, image_file.replace('.jpg', '.csv').replace('.jpeg', '.csv'))}")
 
 
 def run_2d_extraction(input_dir: str, out_dir: str, feature_types: list=["*WHOLESLIDE*"]) -> None:
@@ -91,7 +99,7 @@ def run_2d_extraction(input_dir: str, out_dir: str, feature_types: list=["*WHOLE
         os.makedirs(out_dir)
 
     # Initialize Nyxus
-    nyx = nyxus.Nyxus(feature_types,  n_feature_calc_threads=5)
+    # nyx = nyxus.Nyxus(feature_types,  n_feature_calc_threads=5)
     
     # Get list of image files
     image_files = [f for f in os.listdir(input_dir) if f.endswith(('.jpg', '.jpeg'))]
@@ -101,7 +109,7 @@ def run_2d_extraction(input_dir: str, out_dir: str, feature_types: list=["*WHOLE
     print(f"Using {num_processes} processes")
 
     # Create partial function with fixed arguments
-    process_func = partial(process_image, input_dir=input_dir, out_dir=out_dir, nyx=nyx)
+    process_func = partial(process_image, input_dir=input_dir, out_dir=out_dir, feature_types=feature_types)
     
     # Process images in parallel
     with Pool(processes=num_processes) as pool:
@@ -128,14 +136,11 @@ def calculate_l2_distance(features_dir: str) -> dict:
         # latent_features = pd.read_csv(feature_path).drop('Unnamed: 0', axis=1, errors='ignore')
         numeric_cols = latent_features.select_dtypes(include=[np.number]).columns
         feature_array = latent_features[numeric_cols].iloc[0].values
-        import pdb; pdb.set_trace()
         features_list.append(feature_array)
     features = np.array(features_list)
-    import pdb; pdb.set_trace()
     nn = NearestNeighbors(n_neighbors=11, metric="euclidean")  # 1 extra for self
     nn.fit(features)
     dists, idxs = nn.kneighbors(features) 
-    import pdb; pdb.set_trace()
     # idxs[i] lists neighbors for query i (self at 0)
 
 def benchmark_2d_extraction(input_dir: str, out_dir: str, feature_types: list=["*WHOLESLIDE*"], n_tests=10) -> None:
@@ -148,7 +153,7 @@ def benchmark_2d_extraction(input_dir: str, out_dir: str, feature_types: list=["
     """
 
     # Initialize Nyxus
-    nyx = nyxus.Nyxus(feature_types,  n_feature_calc_threads=5)
+    #nyx = nyxus.Nyxus(feature_types, n_feature_calc_threads=5)
     
     # Get list of image files
     image_files = [f for f in os.listdir(input_dir) if f.endswith(('.jpg', '.jpeg'))]
@@ -159,26 +164,24 @@ def benchmark_2d_extraction(input_dir: str, out_dir: str, feature_types: list=["
     for idx in random_indices:
         time_start = time.time()
         image_file = image_files[idx]
-        process_image(image_file, input_dir, out_dir, nyx)
+        process_image(image_file, input_dir, out_dir, feature_types)
         time_end = time.time()
         total_time += time_end - time_start
     print(f"Total time taken: {total_time} seconds")
     print(f"Average time per image: {total_time / n_tests} seconds")
 
 
+
 if __name__ == "__main__":
     images_input_dir = "./GRAPE/CFPs"
-    features_out_dir = "./GRAPE_Nyxus_ALL/GRAPE_Nyxus_2D_ALL_features"
-    # output_path = "./GRAPE_Nyxus_ALL/WholeSlide_2D_features.pkl"
-    # start_time = time.time()
-    # run_2d_extraction(images_input_dir, features_out_dir, feature_types=["*ALL*"])
+    features_out_dir = "./GRAPE_Nyxus_ALL/CSV_files"
+    output_path = "./GRAPE_Nyxus_ALL/PKL_file/ALL_2D_features.pkl"
+    start_time = time.time()
+    run_2d_extraction(images_input_dir, features_out_dir, feature_types=["*ALL*"])
 
-    # save_features_pkl(images_input_dir, features_out_dir, output_path)
+    save_features_pkl(images_input_dir, features_out_dir, output_path)
 
-    # end_time = time.time()
-    # print(f"Time taken: {(end_time - start_time)/60} minutes")
-    # print(f"Average time per image: {(end_time - start_time)/60 / 631} minutes")
-
-    output_path = "./output"
-    benchmark_2d_extraction(images_input_dir, output_path, feature_types=["*ALL*"], n_tests=10)
+    end_time = time.time()
+    print(f"Time taken: {(end_time - start_time)/60} minutes")
+    print(f"Average time per image: {(end_time - start_time)/60 / 631} minutes")
 
