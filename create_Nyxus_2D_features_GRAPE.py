@@ -151,9 +151,6 @@ def benchmark_2d_extraction(input_dir: str, out_dir: str, feature_types: list=["
         out_dir: Output directory for results
         output_path: Path to save extracted features
     """
-
-    # Initialize Nyxus
-    #nyx = nyxus.Nyxus(feature_types, n_feature_calc_threads=5)
     
     # Get list of image files
     image_files = [f for f in os.listdir(input_dir) if f.endswith(('.jpg', '.jpeg'))]
@@ -173,11 +170,12 @@ def benchmark_2d_extraction(input_dir: str, out_dir: str, feature_types: list=["
 
 
 if __name__ == "__main__":
+    features_dir = "GRAPE_Nyxus_WHOLESLIDE"
     images_input_dir = "./GRAPE/CFPs"
-    features_out_dir = "./GRAPE_Nyxus_ALL/CSV_files"
-    output_path = "./GRAPE_Nyxus_ALL/PKL_file/ALL_2D_features.pkl"
+    features_out_dir = f"{features_dir}/CSV_files"
+    output_path = f"{features_dir}/PKL_file/WHOLESLIDE_2D_features.pkl"
     start_time = time.time()
-    run_2d_extraction(images_input_dir, features_out_dir, feature_types=["*ALL*"])
+    run_2d_extraction(images_input_dir, features_out_dir, feature_types=["*WHOLESLIDE*"])
 
     save_features_pkl(images_input_dir, features_out_dir, output_path)
 

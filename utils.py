@@ -39,7 +39,7 @@ def extract_date_from_filename(filepath: str) -> str:
     return os.path.basename(filepath)
 
 
-def run_3d_extraction(input_dir: str, seg_dir: str, out_dir: str) -> None:
+def run_3d_extraction(input_dir: str, seg_dir: str, out_dir: str, mask_pattern: str = "_whole_brain_mask") -> None:
     """Test 3D volumetric feature extraction.
     
     Args:
@@ -55,10 +55,12 @@ def run_3d_extraction(input_dir: str, seg_dir: str, out_dir: str) -> None:
 
     for input_file in tqdm(input_dir.iterdir()):
         if str(input_file).endswith(".nii.gz") or str(input_file).endswith(".nii"):
-            seg_file = input_file.stem.split(".")[0]+".nii.gz"
+    
+            seg_file = input_file.stem.split(".")[0]+mask_pattern+".nii.gz"
             seg_file = Path(seg_dir).joinpath(seg_file)
             print("seg_file", seg_file)
-            #import pdb; pdb.set_trace()              
+            # image = nib.load(seg_file)
+            import pdb; pdb.set_trace()              
             outpath = Path(out_dir)
             # outfile = outpath.joinpath(input_file.stem.split(".")[0]) + ".csv"
             extractor = Nyxus3DFeatureExtractor(

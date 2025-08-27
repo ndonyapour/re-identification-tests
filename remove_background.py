@@ -35,8 +35,8 @@ def create_otsu_mask(
         # Keep only the brain tissue classes (2 and 3 for brain tissue)
         mask = ants.threshold_image(
             mask,
-            low_thresh=1,  # Keep classes 1, 2, and 3 (brain tissue)
-            high_thresh=n_classes-1,
+            low_thresh=0.5,  # Keep classes 1, 2, and 3 (brain tissue)
+            high_thresh=n_classes,
             inval=1,
             outval=0
         )
@@ -45,32 +45,24 @@ def create_otsu_mask(
     ants.image_write(mask, output_mask_path)
     
     return mask
+def create_otsu_mask_for_all_images(input_dir: str, out_dir: str) -> None:
+    """
+    Create Otsu masks for all images in the input directory.
+    """
+    if not os.path.exists(out_dir):
+        os.makedirs(out_dir)
+    print(f"Creating Otsu masks for all images in {input_dir} and saving to {out_dir}")
+    for file in tqdm(os.listdir(input_dir)):
+        if file.endswith(".nii"):
+            input_file = os.path.join(input_dir, file)
+            output_file = os.path.join(out_dir, file.replace(".nii", "_whole_brain_mask.nii.gz"))
+            create_otsu_mask(input_file, output_file)
 
 # Example usage
 if __name__ == "__main__":
     # input_file = "input_image.nii.gz"
     # output_file = "otsu_mask.nii.gz"
     
-    input_dir = "/Users/donyapourn2/Desktop/projects/datasets/ADNI/t1_mpr_n4_corrected"
-    out_dir = "/Users/donyapourn2/Desktop/projects/datasets/ADNI/t1_mpr_n4_background_removed"
-
-    # if not os.path.exists(out_dir):
-    #     os.makedirs(out_dir)
-
-    # input_images = [f for f in os.listdir(input_dir) 
-    #                  if f.endswith('.nii.gz') or f.endswith('.nii')]
-    
-    # for input_image in tqdm(input_images):
-    #     input_file = os.path.join(input_dir, input_image)
-    #     output_file = os.path.join(out_dir, input_image)
-        
-    #     # Create mask with 4 classes
-    #     mask = create_otsu_mask(
-    #         input_image_path=input_file,
-    #         output_mask_path=output_file,
-    #         n_classes=4,
-    #         mask_background=True  # Set to False if you want to keep all classes
-    #     )
-
-    features_dir = "/Users/donyapourn2/Desktop/projects/datasets/ADNI/t1_mpr_n4_background_removed_features"
-    run_3d_extraction(input_dir, out_dir, features_dir)
+    input_dir = "/home/ubuntu/data/ADNI_dataset/t1_mpr"
+    out_dir = "/home/ubuntu/data/ADNI_dataset/t1_mpr_whole_brain_masks"
+    create_otsu_mask_for_all_images(input_dir, out_dir)

@@ -1,0 +1,117 @@
+{'path': '/home/ubuntu/data/GRAPE/CFPs/79_OD_1.jpg',
+ 'features': array([-0.25160408, -0.45631948, -0.25681698, ..., -0.5719926 ,
+         0.8226466 ,  0.00250298], dtype=float32)}
+
+
+
+Python command 
+
+python find_nearest_neighbor.py --features_folder ../my_features/GRAPE_Nyxus_ALL/PKL_file/ --px_info ../data/GRAPE/grape_img_info_w_file.csv --pat_id_col "Subject Number" --date_col "Visit Number" --filename_col "Corresponding CFP" --out_folder ../my_results/GRAPE_Nyxus_ALL
+
+GRAPE-RETFound ALL
+Results for distance <= -1.0
+Processed images - any: 565 out of 565
+Processed images - different date: 565 out of 565
+Processed patients - any: 106 out of 106
+Processed patients - different date: 106 out of 106
+############
+Image-level metrics
+R@1: 63.01%
+R@10: 83.72% - n imgs with 10 results 565 out of 565
+R@1 - different date: 38.94%
+Recall@10 - different date: 56.11% - n imgs with 10 results 565 out of 565
+############
+Patient-level metrics
+R@1: 83.96%
+R@10: 93.40% - n px with 10 results 106 out of 106
+R@1 - different date: 54.72%
+R@10 - different date: 72.64% - n px with 10 results 106 out of 106
+Read results for 565 images
+R@1 image level: 38.94%
+AP: 83.53%
+R@1 patient level: 54.72% for 106 patients
+AP: 83.60%
+Done
+
+
+** GRAPE RETFound 477
+Results for distance <= -1.0
+Processed images - any: 565 out of 565
+Processed images - different date: 565 out of 565
+Processed patients - any: 106 out of 106
+Processed patients - different date: 106 out of 106
+############
+Image-level metrics
+R@1: 63.54%
+R@10: 82.83% - n imgs with 10 results 565 out of 565
+R@1 - different date: 40.00%
+Recall@10 - different date: 56.81% - n imgs with 10 results 565 out of 565
+############
+Patient-level metrics
+R@1: 83.02%
+R@10: 92.45% - n px with 10 results 106 out of 106
+R@1 - different date: 53.77%
+R@10 - different date: 73.58% - n px with 10 results 106 out of 106
+Read results for 565 images
+R@1 image level: 40.00%
+AP: 83.49%
+R@1 patient level: 53.77% for 106 patients
+AP: 82.13%
+Done
+
+** GRAPE Nyxus ALL
+Results for distance <= -1.0
+Processed images - any: 565 out of 565
+Processed images - different date: 565 out of 565
+Processed patients - any: 106 out of 106
+Processed patients - different date: 106 out of 106
+############
+Image-level metrics
+R@1: 20.53%
+R@10: 53.63% - n imgs with 10 results 565 out of 565
+R@1 - different date: 12.74%
+Recall@10 - different date: 30.80% - n imgs with 10 results 565 out of 565
+############
+Patient-level metrics
+R@1: 50.00%
+R@10: 78.30% - n px with 10 results 106 out of 106
+R@1 - different date: 29.25%
+R@10 - different date: 50.00% - n px with 10 results 106 out of 106
+Read results for 565 images
+R@1 image level: 12.74%
+AP: 43.50%
+R@1 patient level: 29.25% for 106 patients
+AP: 43.42%
+Done
+
+** GRAPE Nyxus WHOLESLIDE
+
+
+Found 565 images for patients with more than one date (106 unique patients)
+Computing Re-identification rate: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 12/12 [00:03<00:00,  3.83it/s]
+Results for distance <= -1.0
+Processed images - any: 565 out of 565
+Processed images - different date: 565 out of 565
+Processed patients - any: 106 out of 106
+Processed patients - different date: 106 out of 106
+############
+Image-level metrics
+R@1: 20.71%
+R@10: 52.74% - n imgs with 10 results 565 out of 565
+R@1 - different date: 13.45%
+Recall@10 - different date: 30.97% - n imgs with 10 results 565 out of 565
+############
+Patient-level metrics
+R@1: 49.06%
+R@10: 77.36% - n px with 10 results 106 out of 106
+R@1 - different date: 29.25%
+R@10 - different date: 50.00% - n px with 10 results 106 out of 106
+Read results for 565 images
+R@1 image level: 13.45%
+AP: 43.89%
+R@1 patient level: 29.25% for 106 patients
+AP: 47.12%
+Done
+
+
+

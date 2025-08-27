@@ -25,22 +25,3 @@ if __name__ == "__main__":
     
     headers = ["Features", "Standardized", "Number of Features", "R@1 (image)", "R@10 (image)", "R@1 (patient)", "R@10 (patient)"]
     print_results(results, headers)
-
-    # # Calculate L2 distances
-    # l2_distances = calculate_pairwise_metrics(input_dir, features_dir)
-    
-    # # Find 10 closest matches for each file
-    # closest_matches = find_closest_matches(l2_distances, n_matches=10)
-    
-    # # Print closest matches report
-    # print_closest_matches(input_dir,closest_matches)
-    
-    # # Save results to a JSON file
-    # import json
-    # with open('closest_matches.json', 'w') as f:
-    #     # Convert to serializable format
-    #     serializable_dict = {
-    #         k: [(match, float(dist)) for match, dist in v] 
-    #         for k, v in closest_matches.items()
-    #     }
-    #     json.dump(serializable_dict, f, indent=4)
