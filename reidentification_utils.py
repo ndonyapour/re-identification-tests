@@ -241,6 +241,7 @@ def find_closest_neighbors(features: np.ndarray,
 
 
 def find_closest_neighbors_BrainAIC(features_csv_path: str, 
+                                    info_csv_path: str,
                                     n_neighbors: int = 10, 
                                     standardize: bool = False,
                                     exclude_same_date: bool = False, 
@@ -288,13 +289,27 @@ def find_closest_neighbors_BrainAIC(features_csv_path: str,
     features = np.array(features_list)
 
     ADNI_metadata = pd.DataFrame(metadata)
-    results = find_closest_neighbors(features, ADNI_metadata, n_neighbors, exclude_same_date, 
+    rate_results = find_closest_neighbors(features, ADNI_metadata, n_neighbors, exclude_same_date, 
                                     distance_threshold, "BrainAIC", standardize, output_dir)
-    # compute_precision_recall(os.path.join(output_dir, 'matches_diff_dates.csv'), output_dir)
-    return results
+    ap_results = compute_precision_recall(os.path.join(output_dir, 'matches_diff_dates.csv'), info_csv_path, output_dir)
+
+   # Combine both results into one dictionary
+    combined_results = {
+        # From rate_results list
+        'features_name': rate_results[0],
+        'standardized': rate_results[1],
+        'n_features': rate_results[2],
+        'r_at_1_img': float(rate_results[3].strip('%')),  # Convert "X.X%" to float
+        'r_at_10_img': float(rate_results[4].strip('%')),
+        'image_ap': ap_results['image_ap'],
+        'r_at_1_patient': float(rate_results[5].strip('%')),
+        'r_at_10_patient': float(rate_results[6].strip('%')),
+        'patient_ap': ap_results['patient_ap'],
+    }
+    return combined_results
 
 
-def find_closest_neighbors_Nyxus(features_dir: str, n_neighbors: int = 10, 
+def find_closest_neighbors_Nyxus(features_dir: str, image_dir: str, info_csv: str, n_neighbors: int = 10, 
                          standardize: bool = False, features_group: str = "All",
                          exclude_same_date: bool = False, distance_threshold: float = -1.0,
                          output_dir: str | None = None) -> None:
@@ -311,96 +326,159 @@ def find_closest_neighbors_Nyxus(features_dir: str, n_neighbors: int = 10,
         distance_threshold: Only keep matches with distance <= threshold (-1 to disable)
         output_dir: Directory to save matches.csv (if None, don't save)
     """
+
+    
+    # load metadata
+    metadata = {
+        'file_name': [],
+        'patient_id': [],
+        'scan_date': []
+    }
     features_list = []
 
-    for file_name in file_names:    
-        file_path = os.path.join(features_dir, file_name.split(".")[0]+".csv")
-        feat_df = pd.read_csv(file_path)
-        numeric_cols = feat_df.select_dtypes(include=[np.number]).columns
-        
-        if features_group == "Shape":
-            numeric_cols = [col for col in numeric_cols if col in SHAPE_FEATURES]
-        elif features_group == "Texture":
-            numeric_cols = [col for col in numeric_cols if col in TEXTURE_FEATURES]
-        elif features_group == "All":
-            pass
-        else:
-            raise ValueError(f"Invalid features group: {features_group}")
-        
-            features_list.append(feat_df[numeric_cols].values[0, :])
-
-    features = np.array(features_list)
+    file_names = os.listdir(features_dir)
     
-  
+    for file_name in file_names:
+        if file_name.endswith(".csv"):
+            file_path = os.path.join(features_dir, file_name)
+            image_path = os.path.join(image_dir, file_name.replace(".csv", ".nii.gz"))
+            nifti_img = nib.load(image_path)
+            subject_id, scan_date = get_subject_and_date(nifti_img, image_path)
+
+            
+            subject_id, scan_date = get_subject_and_date(nifti_img, image_path)
+            metadata['file_name'].append(file_name.replace(".csv", ".nii.gz"))
+            metadata['patient_id'].append(subject_id)
+            metadata['scan_date'].append(scan_date)
+
+            # load features
+            feat_df = pd.read_csv(file_path,
+                                engine='python',  # More robust parsing
+                                encoding='utf-8', sep=',', usecols=lambda x: x != 'Unnamed: 0')  
+            
+            # To remove specific columns, you can do:
+            columns_to_remove = ['intensity_image', 'mask_image', 'ROI_label','Unnamed: 0', 'index', 'id']  # add any column names you want to remove
+            numeric_cols = [col for col in feat_df.select_dtypes(include=[np.number]).columns 
+                            if col not in columns_to_remove] 
+            
+            if features_group == "Shape":
+                numeric_cols = [col for col in numeric_cols if col in SHAPE_FEATURES]
+            elif features_group == "Texture":
+                numeric_cols = [col for col in numeric_cols if col in TEXTURE_FEATURES]
+            elif features_group == "All":
+                pass
+            else:
+                raise ValueError(f"Invalid features group: {features_group}")
+            features_list.append(feat_df[numeric_cols].values[0, :])
+        
+    metadata_df = pd.DataFrame(metadata)
+    features = np.array(features_list)
+    #add features to the metadata_df
+    #import pdb; pdb.set_trace()
+    rate_results = find_closest_neighbors(features, metadata_df, n_neighbors, exclude_same_date, 
+                                    distance_threshold, "Nyxus " + features_group, standardize, output_dir)
+    ap_results = compute_precision_recall(os.path.join(output_dir, 'matches_diff_dates.csv'), info_csv, output_dir)
+
+    # Combine both results into one dictionary
+    combined_results = {
+        'features_name': rate_results[0],
+        'standardized': rate_results[1],
+        'n_features': rate_results[2],
+        'r_at_1_img': float(rate_results[3].strip('%')),  # Convert "X.X%" to float
+        'r_at_10_img': float(rate_results[4].strip('%')),
+        'image_ap': ap_results['image_ap'],
+        'r_at_1_patient': float(rate_results[5].strip('%')),
+        'r_at_10_patient': float(rate_results[6].strip('%')),
+        'patient_ap': ap_results['patient_ap'],
+    }
+    return combined_results
+    
 
 def print_results(results: List[List[str]], headers: List[str]) -> None:
     table = tabulate(results, headers=headers, tablefmt="fancy_grid")
     print(table)
 
 
-def compute_precision_recall(matches_csv: str, output_dir: str) -> dict:
+def compute_precision_recall(matches_csv: str, info_csv: str, output_dir: str) -> dict:
     """
     Compute Precision/Recall metrics based on previous re-identification results.
-    Only uses the matches CSV file which contains query/result pairs and distances.
     
     Args:
-        matches_csv: Path to the matches_diff_dates.csv file
+        matches_csv: Path to matches_diff_dates.csv with query/result pairs
+        info_csv: Path to CSV with filename and patient ID mapping
         output_dir: Directory to save precision-recall plots
         
     Returns:
         dict: Dictionary containing AP and R@1 metrics for both image and patient levels
     """
-    # Import required libraries if not already imported
     from sklearn.metrics import PrecisionRecallDisplay, average_precision_score
     from matplotlib.pyplot import savefig
     import os
     import pandas as pd
 
+    # Read patient info
+    px_info = pd.read_csv(info_csv)
+    if 'filename' not in px_info.columns or 'pat_id' not in px_info.columns:
+        raise ValueError("Info CSV must contain 'filename' and 'pat_id' columns")
+
     # Read re-identification results
     results = pd.read_csv(matches_csv)
     print(f'Read results for {len(results):,d} images')
 
-    # Calculate image-level metrics
-    # The query and result columns already contain the necessary information
-    results['same_px'] = results['query'] == results['result']
+    # Merge images with patient ids
+    results = pd.merge(results, px_info[['pat_id', 'filename']], 
+                      left_on='query', right_on='filename')
+    results = pd.merge(results, px_info[['pat_id', 'filename']], 
+                      left_on='result', right_on='filename')
+    results = results.rename(columns={
+        'pat_id_x': 'query_px',
+        'pat_id_y': 'result_px'
+    })
+
+    # Ground truth of whether the patient is correctly re-identified or not
+    results['same_px'] = results['result_px'] == results['query_px']
     print(f'R@1 image level: {results.same_px.sum() / len(results):.2%}')
 
-    # Rescale distances to scores (higher = better)
+    # Change direction of score: it's a distance (higher = farther), we want higher = closer
     results['rescaled_score'] = results['top_distance'].max() - results['top_distance']
+    
+    # Create output directory if it doesn't exist
+    os.makedirs(output_dir, exist_ok=True)
 
-    # Create precision-recall curve for image level
+    # Image-level precision-recall curve
     _ = PrecisionRecallDisplay.from_predictions(
         results['same_px'], 
         results['rescaled_score'], 
         plot_chance_level=True
     )
-    os.makedirs(output_dir, exist_ok=True)
     savefig(os.path.join(output_dir, 'precision_recall_diff_date.png'), dpi=300)
+    
+    image_ap = average_precision_score(results.same_px, results.rescaled_score)
+    print(f'AP (image level): {image_ap:.2%}')
 
-    print(f'AP (image level): {average_precision_score(results.same_px, results.rescaled_score):.2%}')
-
-    # Calculate patient-level metrics
+    # Group at patient level
     results_px = []
-    for query_img, query_imgs in results.groupby('query'):
-        curr_res = {'query': query_img}
-        same_px = query_imgs[query_imgs['query'] == query_imgs['result']]
+    for px_id, px_imgs in results.groupby('query_px'):
+        curr_res = {'query_px': px_id}
+        same_px = px_imgs[px_imgs.result_px == px_id]
         if len(same_px) == 0:
-            same_px = query_imgs
+            same_px = px_imgs
         
         # Get most similar image
         matched = same_px.sort_values('rescaled_score', ascending=False)
         curr_res.update({
-            'result': matched.iloc[0]['result'],
-            'rescaled_score': matched.iloc[0]['rescaled_score']
+            'result_px': matched.iloc[0].result_px,
+            'rescaled_score': matched.iloc[0].rescaled_score
         })
         results_px.append(curr_res)
 
     results_px = pd.DataFrame(results_px)
-    results_px['same_px'] = results_px['query'] == results_px['result']
-    print(f'R@1 patient level: {results_px.same_px.sum() / len(results_px):.2%} '
-          f'for {len(results_px):,d} patients')
+    results_px['same_px'] = results_px.result_px == results_px.query_px
+    
+    patient_r1 = results_px.same_px.sum() / len(results_px)
+    print(f'R@1 patient level: {patient_r1:.2%} for {len(results_px):,d} patients')
 
-    # Create precision-recall curve for patient level
+    # Patient-level precision-recall curve
     _ = PrecisionRecallDisplay.from_predictions(
         results_px['same_px'],
         results_px['rescaled_score'],
@@ -408,13 +486,13 @@ def compute_precision_recall(matches_csv: str, output_dir: str) -> dict:
     )
     savefig(os.path.join(output_dir, 'precision_recall_diff_date_px_level.png'), dpi=300)
 
-    print(f'AP (patient level): {average_precision_score(results_px.same_px, results_px.rescaled_score):.2%}')
+    patient_ap = average_precision_score(results_px.same_px, results_px.rescaled_score)
+    print(f'AP (patient level): {patient_ap:.2%}')
 
+    # Return metrics dictionary
     return {
-        'image_ap': average_precision_score(results.same_px, results.rescaled_score),
-        'patient_ap': average_precision_score(results_px.same_px, results_px.rescaled_score),
-        'image_r1': results.same_px.sum() / len(results),
-        'patient_r1': results_px.same_px.sum() / len(results_px)
+        'image_ap': image_ap,
+        'patient_ap': patient_ap
     }
 
 

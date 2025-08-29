@@ -60,7 +60,7 @@ def run_3d_extraction(input_dir: str, seg_dir: str, out_dir: str, mask_pattern: 
             seg_file = Path(seg_dir).joinpath(seg_file)
             print("seg_file", seg_file)
             # image = nib.load(seg_file)
-            import pdb; pdb.set_trace()              
+            # import pdb; pdb.set_trace()              
             outpath = Path(out_dir)
             # outfile = outpath.joinpath(input_file.stem.split(".")[0]) + ".csv"
             extractor = Nyxus3DFeatureExtractor(
