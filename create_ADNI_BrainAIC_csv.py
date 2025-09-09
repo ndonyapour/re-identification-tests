@@ -5,7 +5,7 @@ from reidentification_utils import get_subject_and_date
 
 
 input_dir = Path("/home/ubuntu/data/ADNI_dataset/BrainIAC_processed/images")
-csv_path = Path("/home/ubuntu/data/ADNI_dataset/BrainIAC_input_csv/brainiac_ADNI.csv")
+csv_path = Path("/home/ubuntu/data/ADNI_dataset/BrainIAC_input_csv/ADNI_file_lable.csv")
 csv_info_path = Path("/home/ubuntu/data/ADNI_dataset/BrainIAC_input_csv/brainiac_ADNI_info.csv")
 
 
@@ -35,7 +35,7 @@ def create_ADNI_BrainAIC_info_csv(input_dir: Path, csv_path: Path):
         f.write("filename,pat_id,date\n")
         for image_path in input_dir.glob("*.nii.gz"):
             image = nib.load(image_path)
-            subject_id, date = get_subject_and_date(image, image_path)
+            subject_id, date = get_subject_and_date(str(image_path))
             f.write(f"{image_path.name},{subject_id},{date}\n")
         
     print(f"Processed {csv_path} successfully")
@@ -43,7 +43,7 @@ def create_ADNI_BrainAIC_info_csv(input_dir: Path, csv_path: Path):
 
 
 if __name__ == "__main__":
-    # create_ADNI_BrainAIC_csv(input_dir, csv_path)
+    create_ADNI_BrainAIC_csv(input_dir, csv_path)
     create_ADNI_BrainAIC_info_csv(input_dir, csv_info_path)
 
         

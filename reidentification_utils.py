@@ -59,13 +59,12 @@ TEXTURE_FEATURES = [
     '3GLRLM_SRLGLE_AVE', '3GLRLM_SRHGLE_AVE', '3GLRLM_LRLGLE_AVE', '3GLRLM_LRHGLE_AVE']
 
 
-def get_subject_and_date(nifti_img, filename: str = '') -> tuple[str, str]:
+def get_subject_and_date(filename: str) -> tuple[str, str]:
     """
     Get subject ID and scan date from a NIfTI file.
     
     Args:
-        nifti_img: A NiBabel image object
-        filename: Optional filename to extract information from
+        filename: Filename to extract information from (ADNI format expected)
         
     Returns:
         tuple: (subject_id, scan_date) where either could be 'unknown' if not found
@@ -73,43 +72,25 @@ def get_subject_and_date(nifti_img, filename: str = '') -> tuple[str, str]:
     subject_id = 'unknown'
     scan_date = 'unknown'
     
-    # Get header information
-    header = nifti_img.header
-    descrip = header.get('descrip', '').tobytes().decode('utf-8').lower()
-    db_name = header.get('db_name', '').tobytes().decode('utf-8').lower()
+    # ADNI filename pattern: ADNI_035_S_0048_MR_MPR__GradWarp__B1_Correction__N3__Scaled_Br_20080206161657886_S44467_I89626.nii
+    # Subject ID is in format: XXX_S_XXXX (e.g., 035_S_0048)
+    # Date is in format: YYYYMMDD (e.g., 20080206)
     
-    # Try to find subject ID
-    subject_patterns = [
-        r'(sub-\w+)',           # BIDS format
-        r'(adni_\d+)',          # ADNI format
-        r'(s\d{4})',            # ADNI S#### format
-        r'(subject[-_]\w+)'     # General format
-    ]
+    # Extract ADNI subject ID pattern (XXX_S_XXXX)
+    subject_pattern = r'ADNI_(\d{3}_S_\d{4})'
+    subject_match = re.search(subject_pattern, filename)
+    if subject_match:
+        subject_id = subject_match.group(1)
     
-    # Look in both header fields and filename
-    text_to_search = f"{descrip} {db_name} {filename}".lower()
-    
-    for pattern in subject_patterns:
-        match = re.search(pattern, text_to_search)
-        if match:
-            subject_id = match.group(1)
-            break
-    
-    # Try to find date
-    date_patterns = [
-        r'(\d{4}-\d{2}-\d{2})',  # YYYY-MM-DD
-        r'(\d{8})',              # YYYYMMDD
-        r'(\d{2}/\d{2}/\d{4})'   # MM/DD/YYYY
-    ]
-    
-    for pattern in date_patterns:
-        match = re.search(pattern, text_to_search)
-        if match:
-            scan_date = match.group(1)
-            # Convert YYYYMMDD to YYYY-MM-DD if needed
-            if len(scan_date) == 8 and scan_date.isdigit():
-                scan_date = f"{scan_date[:4]}-{scan_date[4:6]}-{scan_date[6:]}"
-            break
+    # Extract date pattern (YYYYMMDD) - look for 8 digits that represent a valid date
+    date_pattern = r'_(\d{8})\d+'  # 8 digits followed by more digits (timestamp)
+    date_match = re.search(date_pattern, filename)
+    if date_match:
+        date_str = date_match.group(1)
+        # Validate it's a reasonable date (starts with 19xx or 20xx)
+        if date_str.startswith(('19', '20')):
+            # Convert YYYYMMDD to YYYY-MM-DD format
+            scan_date = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:]}"
     
     return subject_id, scan_date
 
@@ -277,7 +258,7 @@ def find_closest_neighbors_BrainAIC(features_csv_path: str,
         nifti_img = nib.load(nifti_path)
         
         # Get subject ID and date
-        subject_id, scan_date = get_subject_and_date(nifti_img, nifti_path)
+        subject_id, scan_date = get_subject_and_date(nifti_path)
         
         # Add to data dictionary
         metadata['file_name'].append(Path(nifti_path).name)
@@ -343,10 +324,7 @@ def find_closest_neighbors_Nyxus(features_dir: str, image_dir: str, info_csv: st
             file_path = os.path.join(features_dir, file_name)
             image_path = os.path.join(image_dir, file_name.replace(".csv", ".nii.gz"))
             nifti_img = nib.load(image_path)
-            subject_id, scan_date = get_subject_and_date(nifti_img, image_path)
-
-            
-            subject_id, scan_date = get_subject_and_date(nifti_img, image_path)
+            subject_id, scan_date = get_subject_and_date(file_name.replace(".csv", ".nii.gz"))
             metadata['file_name'].append(file_name.replace(".csv", ".nii.gz"))
             metadata['patient_id'].append(subject_id)
             metadata['scan_date'].append(scan_date)
