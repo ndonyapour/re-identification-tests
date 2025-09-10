@@ -18,6 +18,8 @@ from sklearn.model_selection import GroupKFold
 from skorch.callbacks import LRScheduler
 from torch.optim.lr_scheduler import StepLR
 from skorch.callbacks import EpochScoring, EarlyStopping
+from skorch.callbacks import Callback
+from sklearn.model_selection import StratifiedGroupKFold
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -453,6 +455,51 @@ def plot_training_curves(classifier, save_path='training_curves.png'):
     if valid_acc:
         print(f"Final validation accuracy: {valid_acc[-1]:.4f}")
 
+
+class TrainingOnlyNoise:
+    """
+    Apply noise only during training batches, not validation.
+    """
+    def __init__(self, noise_factor=0.1):
+        self.noise_factor = noise_factor
+        
+    def __call__(self, X, training=True):
+        if training and self.noise_factor > 0:
+            if not isinstance(X, torch.Tensor):
+                X = torch.tensor(X, dtype=torch.float32)
+            
+            # Generate different noise each time this is called
+            feature_std = torch.std(X, dim=0, keepdim=True)
+            noise = torch.randn_like(X) * feature_std * self.noise_factor
+            return X + noise
+        return X
+
+class NoiseAugmentationCallback(Callback):
+    """
+    Callback that applies noise augmentation only to training batches.
+    Each batch gets different noise, ensuring variety in training.
+    """
+    def __init__(self, noise_factor=0.1):
+        self.noise_factor = noise_factor
+        self.noise_augmentation = TrainingOnlyNoise(noise_factor)
+        print(f"NoiseAugmentationCallback initialized with noise_factor={noise_factor}")
+    
+    def on_batch_begin(self, net, batch, training, **kwargs):
+        """
+        Apply noise to each training batch (different noise each time).
+        """
+        if training and len(batch) >= 2:
+            X, y = batch[0], batch[1]
+            
+            # Apply different noise to this batch
+            X_noisy = self.noise_augmentation(X, training=True)
+            
+            # Return the modified batch
+            return (X_noisy, y) + batch[2:] if len(batch) > 2 else (X_noisy, y)
+        
+        # For validation batches, return unchanged
+        return batch
+
 def search_best_model(X_train, y_train, patient_ids_train, input_size):
     """
     Train with patient-aware cross-validation - simplified approach.
@@ -477,6 +524,7 @@ def search_best_model(X_train, y_train, patient_ids_train, input_size):
         ADNIClassifier,
         module__input_size=input_size,
         module__hidden_size=hidden_size,
+        module__num_classes=len(np.unique(y_train)),
         criterion=nn.CrossEntropyLoss,
         optimizer=torch.optim.Adam,
         optimizer__lr=0.0005,
@@ -495,7 +543,7 @@ def search_best_model(X_train, y_train, patient_ids_train, input_size):
     }
 
     # Use GroupKFold to ensure patients don't appear in both train and validation
-    group_kfold = GroupKFold(n_splits=3)
+    group_kfold = StratifiedGroupKFold(n_splits=3, shuffle=True, random_state=42)
     
     gs = GridSearchCV(
         classifier, 
@@ -544,13 +592,14 @@ def train_model(X_train, y_train, patient_ids_train, best_params, input_size):
         lower_is_better=True
     )
     
+    noise_callback = NoiseAugmentationCallback(noise_factor=0.1)
     classifier = NeuralNetClassifier(
         ADNIClassifier,
         module__input_size=input_size,
         module__hidden_size=hidden_size,
         module__dropout_rate=best_params['module__dropout_rate'],
-        module__num_hidden_layers=best_params['module__num_hidden_layers'],
-        module__noise_factor=best_params.get('module__noise_factor', 0.1),  # Use noise factor from search
+        module__num_classes=len(np.unique(y_train)),
+        module__num_hidden_layers=best_params['module__num_hidden_layers'],# Use noise factor from search
         max_epochs=best_params['max_epochs'],
         batch_size=best_params['batch_size'],
         criterion=nn.CrossEntropyLoss,
