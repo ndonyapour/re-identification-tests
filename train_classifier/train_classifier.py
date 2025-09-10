@@ -15,18 +15,18 @@ def train_models_Nyxus():
     # Prepare data
     print("Preparing and splitting data")
     X_train, X_test, y_train, y_test, class_names, patient_ids_train, patient_ids_test = prepare_features_Nyxus(
-        features_dir, image_dir, info_csv, test_size=0.2
+        features_dir, image_dir, info_csv, test_size=0.2, classes=['CN','AD']
     )
     
     # Train model with patient-aware CV
     input_size = X_train.shape[1]
     print("The grid search started")
-    best_params = search_best_model(X_train, y_train, patient_ids_train, input_size)
+    best_params = search_best_model(X_train, y_train, patient_ids_train, input_size, use_augmentation=True)
     print("The grid search finished")
     print(best_params)
 
     print("The model training started")
-    model = train_model(X_train, y_train, patient_ids_train, best_params, input_size)
+    model = train_model(X_train, y_train, patient_ids_train, best_params, input_size, use_augmentation=True)
     print("The model training finished")
     plot_training_curves(model, './plots/ADNI_Nyxus_ALL_training_curves.png')
     torch.save(model, "./models/ADNI_Nyxus_ALL_model.pkl")
@@ -67,7 +67,7 @@ def train_models_BrainAIC():
         features_csv_path, info_csv
     )
     
-    
+    import pdb; pdb.set_trace()
     # Train model with patient-aware CV
     input_size = X_train.shape[1]
     print("The grid search started")

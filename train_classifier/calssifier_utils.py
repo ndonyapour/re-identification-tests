@@ -79,7 +79,7 @@ def patient_level_train_test_split(X: np.ndarray, y: np.ndarray, patient_ids: np
     return X_train, X_test, y_train, y_test, patient_ids_train, patient_ids_test
 
 def prepare_features_Nyxus(features_dir: str, image_dir: str, info_csv: str,
- features_group: str = "All", test_size: float = 0.2
+ features_group: str = "All", test_size: float = 0.2, classes: list[str] = ['CN', 'MCI', 'AD']
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, list, np.ndarray, np.ndarray]:
     """
     Find the closest neighbors for each image in the dataset.
@@ -117,30 +117,32 @@ def prepare_features_Nyxus(features_dir: str, image_dir: str, info_csv: str,
             
             # Extract subject ID from filename (not from NIfTI header)
             subject_id, scan_date = get_subject_and_date(image_path)
-            patient_ids.append(subject_id)
+            
             
             label = adni_info_df[(adni_info_df['Subject'] == subject_id)]['Group'].values[0]
-            labels.append(label)
+            if label in classes:
+                labels.append(label)
+                patient_ids.append(subject_id)
 
-            # load features
-            feat_df = pd.read_csv(file_path,
-                                engine='python',  # More robust parsing
-                                encoding='utf-8', sep=',', usecols=lambda x: x != 'Unnamed: 0')  
-            
-            # To remove specific columns, you can do:
-            columns_to_remove = ['intensity_image', 'mask_image', 'ROI_label','Unnamed: 0', 'index', 'id']  # add any column names you want to remove
-            numeric_cols = [col for col in feat_df.select_dtypes(include=[np.number]).columns 
-                            if col not in columns_to_remove] 
-            
-            if features_group == "Shape":
-                numeric_cols = [col for col in numeric_cols if col in SHAPE_FEATURES]
-            elif features_group == "Texture":
-                numeric_cols = [col for col in numeric_cols if col in TEXTURE_FEATURES]
-            elif features_group == "All":
-                pass
-            else:
-                raise ValueError(f"Invalid features group: {features_group}")
-            features_list.append(feat_df[numeric_cols].values[0, :])
+                # load features
+                feat_df = pd.read_csv(file_path,
+                                    engine='python',  # More robust parsing
+                                    encoding='utf-8', sep=',', usecols=lambda x: x != 'Unnamed: 0')  
+                
+                # To remove specific columns, you can do:
+                columns_to_remove = ['intensity_image', 'mask_image', 'ROI_label','Unnamed: 0', 'index', 'id']  # add any column names you want to remove
+                numeric_cols = [col for col in feat_df.select_dtypes(include=[np.number]).columns 
+                                if col not in columns_to_remove] 
+                
+                if features_group == "Shape":
+                    numeric_cols = [col for col in numeric_cols if col in SHAPE_FEATURES]
+                elif features_group == "Texture":
+                    numeric_cols = [col for col in numeric_cols if col in TEXTURE_FEATURES]
+                elif features_group == "All":
+                    pass
+                else:
+                    raise ValueError(f"Invalid features group: {features_group}")
+                features_list.append(feat_df[numeric_cols].values[0, :])
 
     # Convert to arrays
     X = np.array(features_list)
@@ -231,15 +233,43 @@ def get_hidden_size(input_size):
         return 32
 
 
-class ADNIClassifier(nn.Module):
-    def __init__(self, input_size, hidden_size=128, dropout_rate=0.3, num_hidden_layers=1):
+class NoiseAugmentation:
+    """
+    Add Gaussian noise to features during training to prevent overfitting.
+    """
+    def __init__(self, noise_factor=0.1, apply_prob=0.5):
         """
-        Simple neural network for ADNI classification.
+        Args:
+            noise_factor: Standard deviation of Gaussian noise as fraction of feature std
+            apply_prob: Probability of applying noise to each sample
+        """
+        self.noise_factor = noise_factor
+        self.apply_prob = apply_prob
+        
+    def __call__(self, X):
+        if not isinstance(X, torch.Tensor):
+            X = torch.tensor(X, dtype=torch.float32)
+            
+        # Only apply during training
+        if self.training and torch.rand(1).item() < self.apply_prob:
+            # Calculate noise based on feature standard deviation
+            feature_std = torch.std(X, dim=0, keepdim=True)
+            noise = torch.randn_like(X) * feature_std * self.noise_factor
+            X = X + noise
+        
+        return X
+
+class ADNIClassifier(nn.Module):
+    def __init__(self, input_size, hidden_size=128, dropout_rate=0.3, num_hidden_layers=1, num_classes=3, noise_factor=0.1):
+        """
+        Simple neural network for ADNI classification with noise augmentation.
         
         Args:
             input_size: Number of input features
             hidden_size: Size of hidden layer (default: 128)
             num_hidden_layers: Number of additional hidden layers
+            dropout_rate: Dropout rate for regularization
+            noise_factor: Factor for input noise augmentation
         """
         super().__init__()
         self.layers = nn.ModuleList()
@@ -259,11 +289,15 @@ class ADNIClassifier(nn.Module):
         self.batch_norms.append(nn.BatchNorm1d(hidden_size//2))
         
         # Final layer: hidden_size//2 -> 3 (no BatchNorm on output)
-        self.layers.append(nn.Linear(hidden_size//2, 3))
+        self.layers.append(nn.Linear(hidden_size//2, num_classes))
         
         self.dropout = nn.Dropout(dropout_rate)
 
     def forward(self, x):
+        # Apply noise augmentation to input during training
+        # self.noise_augmentation.training = self.training
+        # x = self.noise_augmentation(x)
+        
         # Apply all layers except the last one with BatchNorm + LeakyReLU + Dropout
         for i, (layer, batch_norm) in enumerate(zip(self.layers[:-1], self.batch_norms)):
             x = layer(x)
@@ -445,7 +479,7 @@ def search_best_model(X_train, y_train, patient_ids_train, input_size):
         module__hidden_size=hidden_size,
         criterion=nn.CrossEntropyLoss,
         optimizer=torch.optim.Adam,
-        optimizer__lr=.005,
+        optimizer__lr=0.0005,
         train_split=False,  # No validation split during GridSearchCV
         device='cuda' if torch.cuda.is_available() else 'cpu',
         verbose=0,
@@ -455,8 +489,9 @@ def search_best_model(X_train, y_train, patient_ids_train, input_size):
     params = {
         'module__num_hidden_layers': [1, 2],
         'module__dropout_rate': [0.2, 0.3],#[0.4, 0.5],
+        #'module__noise_factor': [0.05, 0.1, 0.15],  # Add noise augmentation parameter
         'max_epochs': [100, 200], #50, 100
-        'batch_size': [64, 128],
+        'batch_size': [16, 32],  # [64, 128],
     }
 
     # Use GroupKFold to ensure patients don't appear in both train and validation
@@ -515,12 +550,13 @@ def train_model(X_train, y_train, patient_ids_train, best_params, input_size):
         module__hidden_size=hidden_size,
         module__dropout_rate=best_params['module__dropout_rate'],
         module__num_hidden_layers=best_params['module__num_hidden_layers'],
+        module__noise_factor=best_params.get('module__noise_factor', 0.1),  # Use noise factor from search
         max_epochs=best_params['max_epochs'],
         batch_size=best_params['batch_size'],
         criterion=nn.CrossEntropyLoss,
         optimizer=torch.optim.Adam,
         optimizer__weight_decay=1e-3,  # Add L2 regularization
-        lr=0.0005,  # Lower learning rate
+        lr=0.00005,  # Lower learning rate
         train_split=patient_aware_split,
         device='cuda' if torch.cuda.is_available() else 'cpu',
         callbacks=[lr_policy, train_acc, valid_acc],  # Add early stopping
