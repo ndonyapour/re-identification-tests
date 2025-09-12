@@ -5,6 +5,8 @@ import numpy as np
 
 import pandas as pd
 from sklearn.preprocessing import StandardScaler, LabelEncoder
+from sklearn.feature_selection import VarianceThreshold
+
 from sklearn.model_selection import train_test_split
 import torch
 import torch.nn as nn
@@ -20,26 +22,79 @@ from torch.optim.lr_scheduler import StepLR
 from skorch.callbacks import EpochScoring, EarlyStopping
 from skorch.callbacks import Callback
 from sklearn.model_selection import StratifiedGroupKFold
+from sklearn.preprocessing import RobustScaler
+from sklearn.model_selection import StratifiedKFold
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from reidentification_utils import get_subject_and_date, SHAPE_FEATURES, TEXTURE_FEATURES
 
-def patient_level_train_test_split(X: np.ndarray, y: np.ndarray, patient_ids: np.ndarray, 
-                                 test_size: float = 0.2, random_state: int = 42) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+RANDOM_STATE = 123
+
+
+def remove_constant_features(X_train: np.ndarray, X_test: np.ndarray, threshold: float = 0.0) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
-    Split data ensuring no patient appears in both train and test sets.
+    Remove constant and near-constant features using VarianceThreshold.
+    
+    Args:
+        X_train: Training feature matrix
+        X_test: Test feature matrix  
+        threshold: Variance threshold - features with variance below this are removed
+                  (default: 0.0 removes only constant features)
+    
+    Returns:
+        tuple: (X_train_filtered, X_test_filtered, selected_features_mask)
+    """
+    # Create variance threshold selector
+    variance_selector = VarianceThreshold(threshold=threshold)
+    
+    # Fit on training data and transform both train and test
+    X_train_filtered = variance_selector.fit_transform(X_train)
+    X_test_filtered = variance_selector.transform(X_test)
+    
+    # Get mask of selected features
+    selected_features_mask = variance_selector.get_support()
+    
+    # Report results
+    n_original = X_train.shape[1]
+    n_selected = X_train_filtered.shape[1] 
+    n_removed = n_original - n_selected
+    
+    print(f"Feature filtering results:")
+    print(f"  Original features: {n_original}")
+    print(f"  Removed constant/low-variance features: {n_removed}")
+    print(f"  Remaining features: {n_selected}")
+    print(f"  Variance threshold: {threshold}")
+    
+    if n_removed > 0:
+        removed_indices = np.where(~selected_features_mask)[0]
+        print(f"  Removed feature indices: {removed_indices[:10]}{'...' if len(removed_indices) > 10 else ''}")
+    
+    return X_train_filtered, X_test_filtered, selected_features_mask
+
+
+def patient_level_three_way_split(X: np.ndarray, y: np.ndarray, patient_ids: np.ndarray, 
+                                test_size: float = 0.2, val_size: float = 0.2, 
+                                random_state: int = RANDOM_STATE, remove_constant: bool = True
+                                ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Split data into train/validation/test ensuring no patient appears in multiple sets.
+    This prevents the issue where validation and test sets have different difficulty levels.
     
     Args:
         X: Feature matrix
-        y: Labels
+        y: Labels  
         patient_ids: Array of patient IDs corresponding to each sample
         test_size: Proportion of patients to include in test set
+        val_size: Proportion of patients to include in validation set
         random_state: Random state for reproducibility
+        remove_constant: Whether to remove constant features after scaling
         
     Returns:
-        tuple: (X_train, X_test, y_train, y_test, patient_ids_train, patient_ids_test)
+        tuple: (X_train, X_val, X_test, y_train, y_val, y_test, patient_ids_train, patient_ids_val, patient_ids_test)
     """
+    from sklearn.model_selection import train_test_split
+    
     # Get unique patients and their labels for stratified splitting
     unique_patients = np.unique(patient_ids)
     patient_labels = []
@@ -50,64 +105,92 @@ def patient_level_train_test_split(X: np.ndarray, y: np.ndarray, patient_ids: np
         most_common_label = np.argmax(patient_label_counts)
         patient_labels.append(most_common_label)
     
-    # Split patients (not images) into train/test
-    patients_train, patients_test = train_test_split(
+    # First split: separate test patients from train+val patients
+    patients_trainval, patients_test = train_test_split(
         unique_patients, test_size=test_size, random_state=random_state, 
         stratify=patient_labels
     )
     
-    # Create train/test masks based on patient assignment
-    # If patient is in training set, ALL their images go to training
-    # If patient is in test set, ALL their images go to test
+    # Get labels for remaining patients (train+val)
+    trainval_labels = []
+    for patient in patients_trainval:
+        patient_mask = patient_ids == patient
+        patient_label_counts = np.bincount(y[patient_mask])
+        most_common_label = np.argmax(patient_label_counts)
+        trainval_labels.append(most_common_label)
+    
+    # Second split: separate train and validation patients
+    # Adjust val_size to account for the remaining patients
+    adjusted_val_size = val_size / (1 - test_size)
+    patients_train, patients_val = train_test_split(
+        patients_trainval, test_size=adjusted_val_size, 
+        random_state=random_state + 1,  # Different seed for second split
+        stratify=trainval_labels
+    )
+    
+    # Create masks for each split
     train_mask = np.isin(patient_ids, patients_train)
+    val_mask = np.isin(patient_ids, patients_val) 
     test_mask = np.isin(patient_ids, patients_test)
     
     # Split the data - each image keeps its original label
-    X_train, X_test = X[train_mask], X[test_mask]
-    y_train, y_test = y[train_mask], y[test_mask]
+    X_train, X_val, X_test = X[train_mask], X[val_mask], X[test_mask]
+    y_train, y_val, y_test = y[train_mask], y[val_mask], y[test_mask]
     
-    # Get patient IDs for each image in train and test sets
-    patient_ids_train = patient_ids[train_mask]  # Patient ID for each training image
-    patient_ids_test = patient_ids[test_mask]    # Patient ID for each test image
+    # Get patient IDs for each image in each set
+    patient_ids_train = patient_ids[train_mask]
+    patient_ids_val = patient_ids[val_mask]
+    patient_ids_test = patient_ids[test_mask]
     
-    # Scale features
-    scaler = StandardScaler()
+    # Scale features using only training data
+    scaler = RobustScaler()
     X_train = scaler.fit_transform(X_train)
+    X_val = scaler.transform(X_val)
     X_test = scaler.transform(X_test)
 
-    print(f"Patient-level split: {len(patients_train)} patients in train, {len(patients_test)} patients in test")
-    print(f"Image-level split: {len(X_train)} images in train, {len(X_test)} images in test")
-    
-    return X_train, X_test, y_train, y_test, patient_ids_train, patient_ids_test
+    # Remove constant features after scaling
+    if remove_constant:
+        # Fit on training, transform all sets
+        variance_selector = VarianceThreshold(threshold=0.0)
+        X_train = variance_selector.fit_transform(X_train)
+        X_val = variance_selector.transform(X_val)
+        X_test = variance_selector.transform(X_test)
+        
+        selected_features_mask = variance_selector.get_support()
+        n_removed = np.sum(~selected_features_mask)
+        print(f"Removed {n_removed} constant features")
 
+    # Print split statistics
+    print(f"Patient-level 3-way split:")
+    print(f"  Train: {len(patients_train)} patients ({len(X_train)} images)")
+    print(f"  Val:   {len(patients_val)} patients ({len(X_val)} images)")  
+    print(f"  Test:  {len(patients_test)} patients ({len(X_test)} images)")
+    
+    # Check class distributions
+    print(f"Class distributions:")
+    for i, split_name in enumerate(['Train', 'Val', 'Test']):
+        y_split = [y_train, y_val, y_test][i]
+        class_counts = np.bincount(y_split)
+        class_props = class_counts / len(y_split)
+        print(f"  {split_name}: {class_counts} -> {class_props}")
+    
+    return X_train, X_val, X_test, y_train, y_val, y_test, patient_ids_train, patient_ids_val, patient_ids_test
+
+# Update the prepare_features_Nyxus function to use 3-way split
 def prepare_features_Nyxus(features_dir: str, image_dir: str, info_csv: str,
- features_group: str = "All", test_size: float = 0.2, classes: list[str] = ['CN', 'MCI', 'AD']
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, list, np.ndarray, np.ndarray]:
+                                   features_group: str = "All", test_size: float = 0.2, 
+                                   val_size: float = 0.2, classes: list[str] = ['CN', 'MCI', 'AD']):
     """
-    Find the closest neighbors for each image in the dataset.
-    
-    Args:
-        features_dir: Directory containing feature files
-        image_data_csv: Path to the image data CSV file
-        n_neighbors: Number of neighbors to find
-        standardize: Whether to standardize features
-        features_group: Which features to use ("All", "Shape", or "Texture")
-        exclude_same_date: Whether to exclude matches from same date for same patient
-        distance_threshold: Only keep matches with distance <= threshold (-1 to disable)
-        output_dir: Directory to save matches.csv (if None, don't save)
+    Prepare features with proper 3-way split to ensure fair validation/test comparison.
     """
-
-    
-    # load metadata
+    # ... existing feature loading code stays the same ...
     metadata = {
         'file_name': [],
         'patient_id': [],
         'scan_date': []
     }
     features_list = []
-
     file_names = os.listdir(features_dir)
-    
     adni_info_df = pd.read_excel(info_csv, engine="openpyxl")
     labels = []
     patient_ids = []
@@ -120,7 +203,6 @@ def prepare_features_Nyxus(features_dir: str, image_dir: str, info_csv: str,
             # Extract subject ID from filename (not from NIfTI header)
             subject_id, scan_date = get_subject_and_date(image_path)
             
-            
             label = adni_info_df[(adni_info_df['Subject'] == subject_id)]['Group'].values[0]
             if label in classes:
                 labels.append(label)
@@ -132,7 +214,7 @@ def prepare_features_Nyxus(features_dir: str, image_dir: str, info_csv: str,
                                     encoding='utf-8', sep=',', usecols=lambda x: x != 'Unnamed: 0')  
                 
                 # To remove specific columns, you can do:
-                columns_to_remove = ['intensity_image', 'mask_image', 'ROI_label','Unnamed: 0', 'index', 'id']  # add any column names you want to remove
+                columns_to_remove = ['intensity_image', 'mask_image', 'ROI_label','Unnamed: 0', 'index', 'id']
                 numeric_cols = [col for col in feat_df.select_dtypes(include=[np.number]).columns 
                                 if col not in columns_to_remove] 
                 
@@ -144,6 +226,7 @@ def prepare_features_Nyxus(features_dir: str, image_dir: str, info_csv: str,
                     pass
                 else:
                     raise ValueError(f"Invalid features group: {features_group}")
+
                 features_list.append(feat_df[numeric_cols].values[0, :])
 
     # Convert to arrays
@@ -154,15 +237,16 @@ def prepare_features_Nyxus(features_dir: str, image_dir: str, info_csv: str,
     le = LabelEncoder()
     y = le.fit_transform(labels)
     
-    # Use the shared patient-level splitting function
-    X_train, X_test, y_train, y_test, patient_ids_train, patient_ids_test = patient_level_train_test_split(
-        X, y, patient_ids, test_size=test_size, random_state=42
+    # Use the 3-way split instead of 2-way + random validation
+    X_train, X_val, X_test, y_train, y_val, y_test, patient_ids_train, patient_ids_val, patient_ids_test = patient_level_three_way_split(
+        X, y, patient_ids, test_size=test_size, val_size=val_size, random_state=RANDOM_STATE
     )
     
-    return X_train, X_test, y_train, y_test, le.classes_, patient_ids_train, patient_ids_test
+    return X_train, X_val, X_test, y_train, y_val, y_test, le.classes_, patient_ids_train, patient_ids_val, patient_ids_test
 
 
-def prepare_features_BrainAIC(features_csv_path: str, info_csv: str, test_size: float = 0.2) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, list]:
+def prepare_features_BrainAIC(features_csv_path: str, info_csv: str, test_size: float = 0.2, val_size: float = 0.2, 
+    classes: list[str] = ['CN', 'MCI', 'AD']) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, list]:
     """
     Prepare features for BrainAIC with patient-level train/test split.
     """
@@ -193,12 +277,12 @@ def prepare_features_BrainAIC(features_csv_path: str, info_csv: str, test_size: 
     le = LabelEncoder()
     y = le.fit_transform(labels)
     
-    # Use the shared patient-level splitting function
-    X_train, X_test, y_train, y_test, patient_ids_train, patient_ids_test = patient_level_train_test_split(
-        X, y, patient_ids, test_size=test_size, random_state=42
+    # Use the 3-way split instead of 2-way + random validation
+    X_train, X_val, X_test, y_train, y_val, y_test, patient_ids_train, patient_ids_val, patient_ids_test = patient_level_three_way_split(
+        X, y, patient_ids, test_size=test_size, val_size=val_size, random_state=RANDOM_STATE
     )
     
-    return X_train, X_test, y_train, y_test, le.classes_, patient_ids_train, patient_ids_test
+    return X_train, X_val, X_test, y_train, y_val, y_test, le.classes_, patient_ids_train, patient_ids_val, patient_ids_test
     
 
 # def plot_results(y_true, y_pred, class_names):
@@ -226,7 +310,7 @@ def get_hidden_size(input_size):
     if input_size >= 500:
         return 512
     elif input_size >= 200:
-        return 256
+        return 128
     elif input_size >= 100:
         return 128
     elif input_size >= 50:
@@ -235,34 +319,8 @@ def get_hidden_size(input_size):
         return 32
 
 
-class NoiseAugmentation:
-    """
-    Add Gaussian noise to features during training to prevent overfitting.
-    """
-    def __init__(self, noise_factor=0.1, apply_prob=0.5):
-        """
-        Args:
-            noise_factor: Standard deviation of Gaussian noise as fraction of feature std
-            apply_prob: Probability of applying noise to each sample
-        """
-        self.noise_factor = noise_factor
-        self.apply_prob = apply_prob
-        
-    def __call__(self, X):
-        if not isinstance(X, torch.Tensor):
-            X = torch.tensor(X, dtype=torch.float32)
-            
-        # Only apply during training
-        if self.training and torch.rand(1).item() < self.apply_prob:
-            # Calculate noise based on feature standard deviation
-            feature_std = torch.std(X, dim=0, keepdim=True)
-            noise = torch.randn_like(X) * feature_std * self.noise_factor
-            X = X + noise
-        
-        return X
-
 class ADNIClassifier(nn.Module):
-    def __init__(self, input_size, hidden_size=128, dropout_rate=0.3, num_hidden_layers=1, num_classes=3, noise_factor=0.1):
+    def __init__(self, input_size, hidden_size=128, dropout_rate=0.3, num_hidden_layers=1, num_classes=3):
         """
         Simple neural network for ADNI classification with noise augmentation.
         
@@ -295,11 +353,7 @@ class ADNIClassifier(nn.Module):
         
         self.dropout = nn.Dropout(dropout_rate)
 
-    def forward(self, x):
-        # Apply noise augmentation to input during training
-        # self.noise_augmentation.training = self.training
-        # x = self.noise_augmentation(x)
-        
+    def forward(self, x):      
         # Apply all layers except the last one with BatchNorm + LeakyReLU + Dropout
         for i, (layer, batch_norm) in enumerate(zip(self.layers[:-1], self.batch_norms)):
             x = layer(x)
@@ -311,77 +365,44 @@ class ADNIClassifier(nn.Module):
         x = self.layers[-1](x)
         return x
 
+# class ADNIClassifier(nn.Module):
+#     def __init__(self, input_size, hidden_size=128, dropout_rate=0.3, num_hidden_layers=1, num_classes=3):
+#         """
+#         Simple neural network for ADNI classification with noise augmentation.
+        
+#         Args:
+#             input_size: Number of input features
+#             hidden_size: Size of hidden layer (default: 128)
+#             num_hidden_layers: Number of additional hidden layers
+#             dropout_rate: Dropout rate for regularization
+#             noise_factor: Factor for input noise augmentation
+#         """
+#         super().__init__()
+#         self.network = nn.Sequential(
+#             # Layer 1
+#             nn.Linear(input_size, hidden_size),
+#             nn.BatchNorm1d(hidden_size),
+#             nn.ReLU(),
+#             nn.Dropout(dropout_rate),
+            
+#             # Layer 2
+#             nn.Linear(hidden_size, hidden_size // 2),
+#             nn.BatchNorm1d(hidden_size // 2),
+#             nn.ReLU(),
+#             nn.Dropout(dropout_rate),
+#              # Layer 3
+#             nn.Linear(hidden_size // 2, hidden_size // 4),
+#             nn.BatchNorm1d(hidden_size // 4),
+#             nn.ReLU(),
+#             nn.Dropout(dropout_rate),
+            
+#             # Output layer (NO SOFTMAX)
+#             nn.Linear(hidden_size // 4, num_classes)
+#         )
 
-class PatientAwareTrainSplit:
-    """
-    Patient-aware train/validation splitter for skorch.
-    """
-    def __init__(self, patient_ids, validation_size=0.2, random_state=42):
-        self.patient_ids = patient_ids
-        self.validation_size = validation_size
-        self.random_state = random_state
-        
-    def __call__(self, dataset, y, **fit_params):
-        """
-        Split dataset into train and validation ensuring no patient overlap.
-        """
-        import numpy as np
-        from sklearn.model_selection import train_test_split
-        
-        # Get the actual indices being used in this fold
-        if hasattr(dataset, 'indices'):
-            # This is a Subset from GridSearchCV
-            fold_indices = dataset.indices
-            fold_patient_ids = self.patient_ids[fold_indices]
-        else:
-            # This is the full dataset
-            fold_indices = np.arange(len(y))
-            fold_patient_ids = self.patient_ids
-        
-        # Ensure dimensions match
-        assert len(fold_patient_ids) == len(y), f"Patient IDs ({len(fold_patient_ids)}) and labels ({len(y)}) must have same length"
-        
-        # Get unique patients and their labels for stratified splitting
-        unique_patients = np.unique(fold_patient_ids)
-        patient_labels = []
-        
-        for patient in unique_patients:
-            # Get the most common label for this patient (for stratification)
-            patient_mask = fold_patient_ids == patient
-            patient_label_counts = np.bincount(y[patient_mask])
-            most_common_label = np.argmax(patient_label_counts)
-            patient_labels.append(most_common_label)
-        
-        # Split patients (not images) into train/validation
-        patients_train, patients_valid = train_test_split(
-            unique_patients, 
-            test_size=self.validation_size, 
-            random_state=self.random_state,
-            stratify=patient_labels
-        )
-        
-        # Create train/validation masks based on patient assignment
-        train_mask = np.isin(fold_patient_ids, patients_train)
-        valid_mask = np.isin(fold_patient_ids, patients_valid)
-        
-        # Create indices for train and validation (relative to the current fold)
-        train_indices = np.where(train_mask)[0]
-        valid_indices = np.where(valid_mask)[0]
-        
-        print(f"Patient-aware split: {len(patients_train)} patients ({len(train_indices)} images) for training")
-        print(f"Patient-aware split: {len(patients_valid)} patients ({len(valid_indices)} images) for validation")
-        
-        # Create train and validation datasets using the correct import
-        try:
-            from skorch.dataset import Subset
-        except ImportError:
-            # Fallback: use torch.utils.data.Subset
-            from torch.utils.data import Subset
-        
-        train_dataset = Subset(dataset, train_indices)
-        valid_dataset = Subset(dataset, valid_indices)
-        
-        return train_dataset, valid_dataset
+#     def forward(self, x):
+#         x = self.network(x)
+#         return x
 
 def plot_training_curves(classifier, save_path='training_curves.png'):
     """
@@ -456,94 +477,59 @@ def plot_training_curves(classifier, save_path='training_curves.png'):
         print(f"Final validation accuracy: {valid_acc[-1]:.4f}")
 
 
-class TrainingOnlyNoise:
-    """
-    Apply noise only during training batches, not validation.
-    """
-    def __init__(self, noise_factor=0.1):
-        self.noise_factor = noise_factor
-        
-    def __call__(self, X, training=True):
-        if training and self.noise_factor > 0:
-            if not isinstance(X, torch.Tensor):
-                X = torch.tensor(X, dtype=torch.float32)
-            
-            # Generate different noise each time this is called
-            feature_std = torch.std(X, dim=0, keepdim=True)
-            noise = torch.randn_like(X) * feature_std * self.noise_factor
-            return X + noise
-        return X
 
-class NoiseAugmentationCallback(Callback):
-    """
-    Callback that applies noise augmentation only to training batches.
-    Each batch gets different noise, ensuring variety in training.
-    """
-    def __init__(self, noise_factor=0.1):
-        self.noise_factor = noise_factor
-        self.noise_augmentation = TrainingOnlyNoise(noise_factor)
-        print(f"NoiseAugmentationCallback initialized with noise_factor={noise_factor}")
-    
-    def on_batch_begin(self, net, batch, training, **kwargs):
-        """
-        Apply noise to each training batch (different noise each time).
-        """
-        if training and len(batch) >= 2:
-            X, y = batch[0], batch[1]
-            
-            # Apply different noise to this batch
-            X_noisy = self.noise_augmentation(X, training=True)
-            
-            # Return the modified batch
-            return (X_noisy, y) + batch[2:] if len(batch) > 2 else (X_noisy, y)
-        
-        # For validation batches, return unchanged
-        return batch
 
-def search_best_model(X_train, y_train, patient_ids_train, input_size):
+def search_best_model(X_train, y_train, patient_ids_train, cv_folds=3):
     """
-    Train with patient-aware cross-validation - simplified approach.
+    Train with patient-aware cross-validation - improved approach.
     """
-    torch.manual_seed(42)
-    
+    torch.manual_seed(RANDOM_STATE)
+    input_size = X_train.shape[1]
     # Convert data types
     X_train = X_train.astype(np.float32)
     y_train = y_train.astype(np.int64)
     hidden_size = get_hidden_size(input_size)
 
-    lr_policy = LRScheduler(StepLR, step_size=15, gamma=0.5)
+    # Add class weights for balanced training
+    from sklearn.utils.class_weight import compute_class_weight
+    class_weights = compute_class_weight('balanced', classes=np.unique(y_train), y=y_train)
+    class_weight_tensor = torch.FloatTensor(class_weights)
+
+    lr_policy = LRScheduler(StepLR, step_size=20, gamma=0.7)
     
     train_acc = EpochScoring(scoring='balanced_accuracy', on_train=True, name='train_acc', lower_is_better=False)
     early_stopping = EarlyStopping(
         monitor='valid_loss',
-        patience=15,  # Stop if no improvement for 15 epochs
-        threshold=0.01,
+        patience=20,  # Increase patience
+        threshold=0.005,
         lower_is_better=True
     )
+    
     classifier = NeuralNetClassifier(
         ADNIClassifier,
         module__input_size=input_size,
         module__hidden_size=hidden_size,
         module__num_classes=len(np.unique(y_train)),
         criterion=nn.CrossEntropyLoss,
+        criterion__weight=class_weight_tensor,
         optimizer=torch.optim.Adam,
-        optimizer__lr=0.0005,
+        optimizer__lr=0.001,
+        optimizer__weight_decay=1e-4,
         train_split=False,  # No validation split during GridSearchCV
         device='cuda' if torch.cuda.is_available() else 'cpu',
         verbose=0,
-        callbacks=[lr_policy],
+        callbacks=[lr_policy, train_acc],
     )
-    
+    # Reduced parameter space to prevent overtraining
     params = {
         'module__num_hidden_layers': [1, 2],
-        'module__dropout_rate': [0.2, 0.3],#[0.4, 0.5],
-        #'module__noise_factor': [0.05, 0.1, 0.15],  # Add noise augmentation parameter
-        'max_epochs': [100, 200], #50, 100
-        'batch_size': [16, 32],  # [64, 128],
+        'module__dropout_rate': [0.4, 0.5],  # Increase dropout options
+        'max_epochs': [80, 120],  # Reduce max epochs to prevent overtraining
+        'batch_size': [32, 64],
     }
 
     # Use GroupKFold to ensure patients don't appear in both train and validation
-    group_kfold = StratifiedGroupKFold(n_splits=3, shuffle=True, random_state=42)
+    group_kfold = StratifiedGroupKFold(n_splits=cv_folds, shuffle=True, random_state=RANDOM_STATE)
     
     gs = GridSearchCV(
         classifier, 
@@ -552,68 +538,269 @@ def search_best_model(X_train, y_train, patient_ids_train, input_size):
         cv=group_kfold,  # This provides patient-aware validation
         scoring='balanced_accuracy', 
         verbose=2,
-        n_jobs=-1
+        n_jobs=1  # Reduce parallelism to avoid memory issues
     )
     
     # Pass patient_ids as groups parameter
     gs.fit(X_train, y_train, groups=patient_ids_train)
+    
+    print(f"Best parameters found: {gs.best_params_}")
+    print(f"Best CV score: {gs.best_score_:.4f}")
+    
     return gs.best_params_
 
-
-def train_model(X_train, y_train, patient_ids_train, best_params, input_size):
+    
+def train_model(X_train, X_val, y_train, y_val, best_params):
     """
-    Train final model with patient-aware validation split for detailed curves.
+    Train model using explicit validation set instead of random splits.
+    This ensures fair comparison between validation and test performance.
     """
-    torch.manual_seed(42)
+    torch.manual_seed(RANDOM_STATE)
+    input_size = X_train.shape[1]
     
     # Convert data types
     X_train = X_train.astype(np.float32)
+    X_val = X_val.astype(np.float32)
     y_train = y_train.astype(np.int64)
+    y_val = y_val.astype(np.int64)
     hidden_size = get_hidden_size(input_size)
 
-    lr_policy = LRScheduler(StepLR, step_size=15, gamma=0.5)
+    # Add class weights for balanced training
+    from sklearn.utils.class_weight import compute_class_weight
+    class_weights = compute_class_weight('balanced', classes=np.unique(y_train), y=y_train)
+    class_weight_tensor = torch.FloatTensor(class_weights)
     
-    # Create patient-aware train/validation splitter
-    patient_aware_split = PatientAwareTrainSplit(
-        patient_ids=patient_ids_train,
-        validation_size=0.2,
-        random_state=42
-    )
+    print(f"Class weights: {dict(enumerate(class_weights))}")
+
+    # Learning rate scheduler
+    lr_policy = LRScheduler(StepLR, step_size=20, gamma=0.7)
     
-    # Add standard accuracy callbacks
+    # Callbacks for monitoring
     train_acc = EpochScoring(scoring='balanced_accuracy', on_train=True, name='train_acc', lower_is_better=False)
     valid_acc = EpochScoring(scoring='balanced_accuracy', on_train=False, name='valid_acc', lower_is_better=False)
     
-    # Add early stopping to prevent overfitting
+    # Early stopping based on validation loss
     early_stopping = EarlyStopping(
         monitor='valid_loss',
-        patience=15,  # Stop if no improvement for 15 epochs
-        threshold=0.01,
+        patience=15,
+        threshold=0.001,
         lower_is_better=True
     )
     
-    noise_callback = NoiseAugmentationCallback(noise_factor=0.1)
+    # Create explicit validation dataset
+    from torch.utils.data import TensorDataset
+    val_dataset = TensorDataset(torch.FloatTensor(X_val), torch.LongTensor(y_val))
+    
     classifier = NeuralNetClassifier(
         ADNIClassifier,
         module__input_size=input_size,
         module__hidden_size=hidden_size,
         module__dropout_rate=best_params['module__dropout_rate'],
         module__num_classes=len(np.unique(y_train)),
-        module__num_hidden_layers=best_params['module__num_hidden_layers'],# Use noise factor from search
+        module__num_hidden_layers=best_params.get('module__num_hidden_layers', 1),
         max_epochs=best_params['max_epochs'],
         batch_size=best_params['batch_size'],
         criterion=nn.CrossEntropyLoss,
+        criterion__weight=class_weight_tensor,
         optimizer=torch.optim.Adam,
-        optimizer__weight_decay=1e-3,  # Add L2 regularization
-        lr=0.00005,  # Lower learning rate
-        train_split=patient_aware_split,
+        optimizer__lr=0.0001,
+        optimizer__weight_decay=1e-4,
+        train_split=lambda dataset, y, **kwargs: (dataset, val_dataset),
         device='cuda' if torch.cuda.is_available() else 'cpu',
-        callbacks=[lr_policy, train_acc, valid_acc],  # Add early stopping
+        callbacks=[lr_policy, train_acc, valid_acc, early_stopping],
         verbose=0
     )
-    
-    # Train the model
+
     classifier.fit(X_train, y_train)
+    
+    # Evaluate on validation set
+    val_pred = classifier.predict(X_val)
+    val_acc = np.mean(val_pred == y_val)
+    
+    print(f"\n{'='*60}")
+    print("TRAINING COMPLETED WITH EXPLICIT VALIDATION")
+    print(f"{'='*60}")
+    print(f"Final validation accuracy: {val_acc:.4f}")
+    print(f"Training epochs: {len(classifier.history)}")
+    
+    # Check for overfitting
+    final_train_acc = classifier.history[-1]['train_acc']
+    if final_train_acc > val_acc + 0.1:
+        print("⚠️  WARNING: Potential overfitting detected (train acc >> val acc)")
+    
     return classifier
 
+
+
+def calculate_patient_level_results(y_pred, y_true, patient_ids, class_names=None):
+    """
+    Calculate patient-level results from image-level predictions using majority voting.
     
+    Args:
+        y_pred: Image-level predictions
+        y_true: Image-level true labels
+        patient_ids: Patient IDs corresponding to each image
+        class_names: Names of classes (optional)
+        
+    Returns:
+        dict: Patient-level metrics
+    """
+    from collections import defaultdict
+    from sklearn.metrics import balanced_accuracy_score, f1_score, classification_report
+    
+    # Group images by patient
+    patient_groups = defaultdict(list)
+    for i, pid in enumerate(patient_ids):
+        patient_groups[pid].append(i)
+    
+    patient_true_labels = []
+    patient_pred_labels = []
+    
+    # Aggregate for each patient using majority voting
+    for patient_id, image_indices in patient_groups.items():
+        # True label: most common label for this patient
+        patient_true_label = np.bincount(y_true[image_indices]).argmax()
+        
+        # Predicted label: majority vote of predictions
+        patient_pred_label = np.bincount(y_pred[image_indices]).argmax()
+        
+        patient_true_labels.append(patient_true_label)
+        patient_pred_labels.append(patient_pred_label)
+    
+    patient_true = np.array(patient_true_labels)
+    patient_pred = np.array(patient_pred_labels)
+    
+    # Calculate metrics
+    patient_balanced_acc = balanced_accuracy_score(patient_true, patient_pred)
+    patient_macro_f1 = f1_score(patient_true, patient_pred, average='macro')
+    
+    # Image-level metrics for comparison
+    image_balanced_acc = balanced_accuracy_score(y_true, y_pred)
+    image_macro_f1 = f1_score(y_true, y_pred, average='macro')
+    
+    # Print results
+    print(f"\nPatient-Level Results:")
+    print(f"  Total patients: {len(patient_true)}")
+    print(f"  Total images: {len(y_true)}")
+    print(f"  Patient Balanced Accuracy: {patient_balanced_acc:.4f}")
+    print(f"  Patient Macro F1: {patient_macro_f1:.4f}")
+    print(f"  Image Balanced Accuracy: {image_balanced_acc:.4f}")
+    print(f"  Image Macro F1: {image_macro_f1:.4f}")
+    
+    if class_names is not None and len(class_names) > 0:
+        print(f"\nPatient-Level Classification Report:")
+        print(classification_report(patient_true, patient_pred, target_names=class_names))
+    
+    return {
+        'patient_balanced_accuracy': patient_balanced_acc,
+        'patient_macro_f1': patient_macro_f1,
+        'image_balanced_accuracy': image_balanced_acc,
+        'image_macro_f1': image_macro_f1,
+        'n_patients': len(patient_true),
+        'n_images': len(y_true)
+    }
+
+
+
+def apply_smote_resampling(X_train: np.ndarray, y_train: np.ndarray,
+                          method: str = 'smote', 
+                          random_state: int = RANDOM_STATE) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Apply SMOTE or other resampling techniques to handle class imbalance.
+    
+    Args:
+        X_train: Training feature matrix
+        y_train: Training labels
+        method: 'smote', 'adasyn', 'smoteenn', 'borderline', 'svmsmote'
+        random_state: Random state for reproducibility
+        
+    Returns:
+        tuple: (X_resampled, y_resampled)
+    """
+    print(f"Applying {method.upper()} resampling for class imbalance...")
+    
+    # Check original class distribution
+    unique_classes, counts = np.unique(y_train, return_counts=True)
+    print(f"Original class distribution:")
+    for cls, count in zip(unique_classes, counts):
+        percentage = (count / len(y_train)) * 100
+        print(f"  Class {cls}: {count} samples ({percentage:.1f}%)")
+    
+    # Calculate imbalance ratio
+    max_count = np.max(counts)
+    min_count = np.min(counts)
+    imbalance_ratio = max_count / min_count
+    print(f"Imbalance ratio: {imbalance_ratio:.2f}:1")
+    
+    # If classes are already balanced, skip resampling
+    if imbalance_ratio < 1.5:
+        print("Classes are already well balanced. Skipping resampling.")
+        return X_train, y_train
+    
+    try:
+        # Determine appropriate k_neighbors based on minority class size
+        min_class_size = np.min(counts)
+        k_neighbors = min(5, min_class_size - 1)  # Ensure k < minority class size
+        
+        if k_neighbors < 1:
+            print(f"Warning: Minority class too small ({min_class_size} samples). Cannot apply SMOTE.")
+            return X_train, y_train
+        
+        print(f"Using k_neighbors={k_neighbors} for SMOTE")
+        
+        if method == 'smote':
+            from imblearn.over_sampling import SMOTE
+            resampler = SMOTE(
+                random_state=random_state,
+                k_neighbors=k_neighbors
+            )
+            
+        elif method == 'adasyn':
+            from imblearn.over_sampling import ADASYN
+            resampler = ADASYN(
+                random_state=random_state,
+                n_neighbors=k_neighbors
+            )
+            
+        elif method == 'borderline':
+            from imblearn.over_sampling import BorderlineSMOTE
+            resampler = BorderlineSMOTE(
+                random_state=random_state,
+                k_neighbors=k_neighbors
+            )
+            
+        elif method == 'svmsmote':
+            from imblearn.over_sampling import SVMSMOTE
+            resampler = SVMSMOTE(
+                random_state=random_state,
+                k_neighbors=k_neighbors
+            )
+            
+        elif method == 'smoteenn':
+            from imblearn.combine import SMOTEENN
+            resampler = SMOTEENN(
+                random_state=random_state,
+                smote__k_neighbors=k_neighbors
+            )
+        else:
+            raise ValueError(f"Unknown resampling method: {method}")
+        
+        # Apply resampling
+        X_resampled, y_resampled = resampler.fit_resample(X_train, y_train)
+        
+        # Check new class distribution
+        unique_classes_new, counts_new = np.unique(y_resampled, return_counts=True)
+        print(f"Resampled class distribution:")
+        for cls, count in zip(unique_classes_new, counts_new):
+            percentage = (count / len(y_resampled)) * 100
+            print(f"  Class {cls}: {count} samples ({percentage:.1f}%)")
+        
+        print(f"Dataset size change: {len(X_train)} -> {len(X_resampled)} samples "
+              f"({((len(X_resampled) - len(X_train)) / len(X_train) * 100):+.1f}%)")
+        
+        return X_resampled, y_resampled
+        
+    except Exception as e:
+        print(f"Error applying {method}: {str(e)}")
+        print("Falling back to original data without resampling.")
+        return X_train, y_train

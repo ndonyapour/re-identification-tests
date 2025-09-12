@@ -10,6 +10,98 @@ import joblib
 import os
 from calssifier_utils import prepare_features_Nyxus, prepare_features_BrainAIC
 from sklearn.model_selection import StratifiedGroupKFold
+from sklearn.ensemble import VotingClassifier
+from sklearn.svm import SVC
+from sklearn.pipeline import Pipeline
+from sklearn.impute import SimpleImputer
+from sklearn.feature_selection import VarianceThreshold, SelectKBest, f_classif
+from sklearn.metrics import make_scorer, f1_score
+from sklearn.model_selection import RandomizedSearchCV
+from sklearn.metrics import make_scorer, f1_score
+from sklearn.model_selection import RandomizedSearchCV
+
+#from xgboost import XGBClassifier
+
+RANDOM_STATE = 123
+
+def make_rf_pipeline(best_params=None):
+    """
+    Leak-proof RF pipeline:
+      impute (median) -> drop constant cols -> (optional) SelectKBest -> RandomForest
+    You can change k in GridSearch or fix it here.
+    """
+    rf = RandomForestClassifier(
+        random_state=RANDOM_STATE,
+        n_jobs=-1,
+        oob_score=True,
+        **(best_params or {})
+    )
+    pipe = Pipeline([
+        ("impute", SimpleImputer(strategy="median")),
+        ("varth", VarianceThreshold(threshold=0.0)),
+        ("kbest", SelectKBest(score_func=f_classif, k=256)),  # k will be tuned below
+        ("rf", rf),
+    ])
+    return pipe
+
+def search_best_rf_model_pipeline(X_train, y_train, patient_ids_train, cv_folds=3):
+    print("Starting FAST Random Forest hyperparameter search...")
+    print(f"Training data shape: {X_train.shape}")
+    print(f"Number of unique patients: {len(np.unique(patient_ids_train))}")
+
+    param_grid = {
+        "kbest__k": [128],           # tune feature selection size
+        "rf__n_estimators": [400],
+        "rf__max_depth": [15, None],
+        "rf__min_samples_split": [2, 10],
+        "rf__min_samples_leaf": [1, 2],
+        "rf__max_features": ["sqrt", 0.3],
+        "rf__class_weight": ["balanced_subsample"],
+        "rf__bootstrap": [True],
+    }
+
+    macro_f1 = make_scorer(f1_score, average="macro")
+    cv = StratifiedGroupKFold(n_splits=cv_folds, shuffle=True, random_state=RANDOM_STATE)
+
+    grid_search = GridSearchCV(
+        estimator=make_rf_pipeline(),
+        param_grid=param_grid,
+        cv=cv,
+        scoring=macro_f1,
+        verbose=1,
+        n_jobs=-1,
+        return_train_score=False
+    )
+
+    print("Fitting GridSearchCV...")
+    grid_search.fit(X_train, y_train, groups=patient_ids_train)
+
+    print("="*50)
+    print("FAST RANDOM FOREST SEARCH RESULTS")
+    print("="*50)
+    print(f"Best CV macro-F1: {grid_search.best_score_:.4f}")
+    print("Best parameters:")
+    for k, v in grid_search.best_params_.items():
+        print(f"  {k}: {v}")
+
+    # If you still want bare RF params (optional):
+    best_params = {k.replace("rf__", ""): v for k, v in grid_search.best_params_.items() if k.startswith("rf__")}
+    best_params["_kbest_k"] = grid_search.best_params_.get("kbest__k")
+
+    # Return both the params and the fitted best pipeline
+    return best_params, grid_search.best_estimator_
+
+def train_random_forest_pipeline(X_train, y_train, patient_ids_train, best_pipeline):
+    """
+    Train the best pipeline returned by GridSearchCV (no leakage).
+    """
+    print("Training final Random Forest pipeline...")
+    best_pipeline.fit(X_train, y_train)
+    rf = best_pipeline.named_steps["rf"]
+    if getattr(rf, "oob_score", False) and getattr(rf, "bootstrap", True):
+        print(f"OOB score (informational): {rf.oob_score_:.4f}")
+    print(f"Training accuracy: {best_pipeline.score(X_train, y_train):.4f}")
+    return best_pipeline
 
 def plot_confusion_matrix(y_true, y_pred, class_names, save_path='confusion_matrix_RF.png'):
     """
@@ -65,69 +157,7 @@ def plot_feature_importance(rf_model, feature_names, top_n=20, save_path='featur
     
     return feature_imp_df
 
-def search_best_rf_model(X_train, y_train, patient_ids_train, cv_folds=5):
-    """
-    Perform hyperparameter search for Random Forest with patient-aware cross-validation.
-    
-    Args:
-        X_train: Training features
-        y_train: Training labels
-        patient_ids_train: Patient IDs for group-aware splitting
-        cv_folds: Number of cross-validation folds
-        
-    Returns:
-        dict: Best hyperparameters
-    """
-    print("Starting Random Forest hyperparameter search...")
-    print(f"Training data shape: {X_train.shape}")
-    print(f"Number of unique patients: {len(np.unique(patient_ids_train))}")
-    
-    # Define hyperparameter grid
-    param_grid = {
-        'n_estimators': [100, 200, 300],
-        'max_depth': [10, 15, 20, None],
-        'min_samples_split': [2, 5, 10],
-        'min_samples_leaf': [1, 2, 4],
-        'max_features': ['sqrt', 'log2', 0.3],
-        'bootstrap': [True],
-        'class_weight': ['balanced', 'balanced_subsample']
-    }
-    
-    # Create Random Forest classifier
-    rf = RandomForestClassifier(
-        random_state=42,
-        n_jobs=-1,
-        oob_score=True  # Out-of-bag score for additional validation
-    )
-    
-    # Use GroupKFold for patient-aware cross-validation
-    group_kfold = StratifiedGroupKFold(n_splits=cv_folds, shuffle=True, random_state=42)
-    
-    # Perform grid search
-    grid_search = GridSearchCV(
-        estimator=rf,
-        param_grid=param_grid,
-        cv=group_kfold,
-        scoring='balanced_accuracy',
-        verbose=2,
-        n_jobs=1,  # Keep as 1 to avoid memory issues
-        return_train_score=True
-    )
-    
-    print("Fitting GridSearchCV...")
-    grid_search.fit(X_train, y_train, groups=patient_ids_train)
-    
-    print("="*50)
-    print("RANDOM FOREST HYPERPARAMETER SEARCH RESULTS")
-    print("="*50)
-    print(f"Best cross-validation score: {grid_search.best_score_:.4f}")
-    print(f"Best parameters:")
-    for param, value in grid_search.best_params_.items():
-        print(f"  {param}: {value}")
-    
-    return grid_search.best_params_, grid_search
-
-def search_best_rf_model_fast(X_train, y_train, patient_ids_train, cv_folds=3):
+def search_best_rf_model(X_train, y_train, patient_ids_train, cv_folds=3):
     """
     Fast hyperparameter search for Random Forest with reduced parameter grid.
     
@@ -158,13 +188,13 @@ def search_best_rf_model_fast(X_train, y_train, patient_ids_train, cv_folds=3):
     
     # Create Random Forest classifier
     rf = RandomForestClassifier(
-        random_state=42,
+        random_state=RANDOM_STATE,
         n_jobs=-1,  # Use all cores
-        oob_score=True
+        #oob_score=True
     )
     
     # Use fewer CV folds
-    group_kfold = GroupKFold(n_splits=cv_folds)
+    group_kfold = StratifiedGroupKFold(n_splits=cv_folds, shuffle=True, random_state=RANDOM_STATE)
     
     # Perform grid search
     grid_search = GridSearchCV(
@@ -190,46 +220,6 @@ def search_best_rf_model_fast(X_train, y_train, patient_ids_train, cv_folds=3):
     
     return grid_search.best_params_, grid_search
 
-def search_best_rf_model_minimal(X_train, y_train, patient_ids_train):
-    """
-    Ultra-fast Random Forest with minimal hyperparameter search.
-    """
-    print("Starting MINIMAL Random Forest hyperparameter search...")
-    
-    # Test only a few key combinations
-    param_grid = {
-        'n_estimators': [100],
-        'max_depth': [None],
-        'max_features': ['sqrt'],
-        'class_weight': ['balanced']
-    }
-    
-    rf = RandomForestClassifier(
-        random_state=42,
-        n_jobs=-1,
-        oob_score=True,
-        min_samples_split=2,
-        min_samples_leaf=1
-    )
-    
-    # Use only 3-fold CV
-    group_kfold = GroupKFold(n_splits=3)
-    
-    grid_search = GridSearchCV(
-        estimator=rf,
-        param_grid=param_grid,
-        cv=group_kfold,
-        scoring='balanced_accuracy',
-        verbose=0,
-        n_jobs=-1
-    )
-    
-    grid_search.fit(X_train, y_train, groups=patient_ids_train)
-    
-    print(f"Minimal search completed!")
-    print(f"CV score: {grid_search.best_score_:.4f}")
-    
-    return grid_search.best_params_, grid_search
 
 def train_random_forest(X_train, y_train, patient_ids_train, best_params, feature_names=None):
     """
@@ -250,7 +240,7 @@ def train_random_forest(X_train, y_train, patient_ids_train, best_params, featur
     # Create model with best parameters
     rf_model = RandomForestClassifier(
         **best_params,
-        random_state=42,
+        random_state=RANDOM_STATE,
         n_jobs=-1,
         oob_score=True
     )
@@ -356,7 +346,7 @@ def train_rf_nyxus():
     
     # Hyperparameter search
     best_params, grid_search = search_best_rf_model(
-        X_train, y_train, patient_ids_train, cv_folds=5
+        X_train, y_train, patient_ids_train, cv_folds=3
     )
     
     # Train final model
@@ -388,6 +378,60 @@ def train_rf_nyxus():
     
     return rf_model, best_params, feature_imp_df
 
+
+def train_rf_brainiac_pipeline():
+    """
+    Train Random Forest on BrainIAC features.
+    """
+    print("Training Random Forest with BrainIAC features...")
+    
+    # Paths to your data
+    features_csv_path = "/home/ubuntu/data/ADNI_dataset/BrainIAC_features/features.csv"
+    info_csv = "/home/ubuntu/data/ADNI_dataset/ADNI1_Complete_3Yr_1.5T_diagonosis.xlsx"
+    
+    # Prepare data
+    print("Preparing and splitting data...")
+    X_train, X_test, y_train, y_test, class_names, patient_ids_train, patient_ids_test = prepare_features_BrainAIC(
+        features_csv_path, info_csv, test_size=0.2
+    )
+    
+    print(f"Training set: {X_train.shape[0]} samples, {X_train.shape[1]} features")
+    print(f"Test set: {X_test.shape[0]} samples")
+    print(f"Classes: {class_names}")
+    
+    # Get feature names
+    feature_names = [f"BrainIAC_Feature_{i}" for i in range(X_train.shape[1])]
+    
+    # Hyperparameter search
+    best_params, grid_search, best_pipeline = search_best_rf_model_pipeline(
+        X_train, y_train, patient_ids_train, cv_folds=3
+    )
+    
+    # Train final model
+    rf_model = train_random_forest_pipeline(
+        X_train, y_train, patient_ids_train, best_pipeline
+    )
+    
+    # Evaluate on test set
+    y_pred, y_pred_proba = evaluate_random_forest(
+        rf_model, X_test, y_test, patient_ids_test, class_names
+    )
+    
+    # Plot results
+    plot_confusion_matrix(y_test, y_pred, class_names, './plots/confusion_matrix_RF_BrainIAC.png')
+    feature_imp_df = plot_feature_importance(
+        rf_model, feature_names, top_n=20, save_path='./plots/feature_importance_RF_BrainIAC.png'
+    )
+    
+    # Save model and results
+    joblib.dump(rf_model, './models/RF_BrainIAC_model.pkl')
+    feature_imp_df.to_csv('./models/feature_importance_RF_BrainIAC.csv', index=False)
+    
+    print(f"\nModel saved to: ./models/RF_BrainIAC_model.pkl")
+    print(f"Feature importance saved to: ./models/feature_importance_RF_BrainIAC.csv")
+    
+    return rf_model, best_params, feature_imp_df
+
 def train_rf_brainiac():
     """
     Train Random Forest on BrainIAC features.
@@ -413,7 +457,7 @@ def train_rf_brainiac():
     
     # Hyperparameter search
     best_params, grid_search = search_best_rf_model(
-        X_train, y_train, patient_ids_train, cv_folds=5
+        X_train, y_train, patient_ids_train, cv_folds=3
     )
     
     # Train final model
@@ -425,11 +469,6 @@ def train_rf_brainiac():
     y_pred, y_pred_proba = evaluate_random_forest(
         rf_model, X_test, y_test, patient_ids_test, class_names
     )
-    
-    # Create output directory
-    os.makedirs('./plots', exist_ok=True)
-    os.makedirs('./models', exist_ok=True)
-    
     # Plot results
     plot_confusion_matrix(y_test, y_pred, class_names, './plots/confusion_matrix_RF_BrainIAC.png')
     feature_imp_df = plot_feature_importance(
@@ -445,7 +484,7 @@ def train_rf_brainiac():
     
     return rf_model, best_params, feature_imp_df
 
-def train_rf_nyxus_fast():
+def train_rf_nyxus():
     """
     Fast Random Forest training on Nyxus features.
     """
@@ -468,34 +507,13 @@ def train_rf_nyxus_fast():
     print(f"Training set: {X_train.shape[0]} samples, {X_train.shape[1]} features")
     print(f"Test set: {X_test.shape[0]} samples")
     print(f"Classes: {class_names}")
-    
-    # Choose search method
-    print("\nChoose search method:")
-    print("1. Fast search (2^4 = 16 combinations)")
-    print("2. Minimal search (1 combination)")
-    print("3. Skip search, use default parameters")
-    
-    choice = input("Enter choice (1-3) or press Enter for option 3: ").strip()
-    
-    if choice == "1":
-        best_params, grid_search = search_best_rf_model_fast(
-            X_train, y_train, patient_ids_train, cv_folds=3
-        )
-    elif choice == "2":
-        best_params, grid_search = search_best_rf_model_minimal(
-            X_train, y_train, patient_ids_train
-        )
-    else:
-        print("Using default parameters (fastest option)...")
-        best_params = {
-            'n_estimators': 100,
-            'max_depth': None,
-            'max_features': 'sqrt',
-            'class_weight': 'balanced',
-            'min_samples_split': 2,
-            'min_samples_leaf': 1
-        }
-    
+
+   
+
+    best_params, grid_search = search_best_rf_model(
+        X_train, y_train, patient_ids_train, cv_folds=3
+    )
+
     # Get feature names
     feature_names = [f"Feature_{i}" for i in range(X_train.shape[1])]
     
@@ -509,14 +527,10 @@ def train_rf_nyxus_fast():
         rf_model, X_test, y_test, patient_ids_test, class_names
     )
     
-    # Create output directory
-    os.makedirs('./plots', exist_ok=True)
-    os.makedirs('./models', exist_ok=True)
-    
     # Plot results
-    plot_confusion_matrix(y_test, y_pred, class_names, './plots/confusion_matrix_RF_Nyxus_fast.png')
+    plot_confusion_matrix(y_test, y_pred, class_names, './plots/confusion_matrix_RF_Nyxus.png')
     feature_imp_df = plot_feature_importance(
-        rf_model, feature_names, top_n=20, save_path='./plots/feature_importance_RF_Nyxus_fast.png'
+        rf_model, feature_names, top_n=20, save_path='./plots/feature_importance_RF_Nyxus.png'
     )
     
     # Save model and results
@@ -530,15 +544,12 @@ def train_rf_nyxus_fast():
 
 # Update the main function
 if __name__ == "__main__":
-    print("="*60)
-    print("FAST RANDOM FOREST 3-WAY CLASSIFICATION (CN/MCI/AD)")
-    print("="*60)
+    # print("="*60)
+    # print("FAST RANDOM FOREST 3-WAY CLASSIFICATION (CN/MCI/AD)")
+    # print("="*60)
     
     # Train on Nyxus features with fast search
-    rf_nyxus, params_nyxus, importance_nyxus = train_rf_nyxus_fast()
-    
-    print("\n" + "="*60)
-    print("FAST RANDOM FOREST TRAINING COMPLETE!")
-    print("="*60)
-    print("Check the ./plots/ directory for visualizations")
-    print("Check the ./models/ directory for saved models")
+    #rf_nyxus, params_nyxus, importance_nyxus = train_rf_nyxus()
+
+#    rf_brainiac, params_brainiac, importance_brainiac = train_rf_brainiac()
+    train_rf_brainiac_pipeline()
