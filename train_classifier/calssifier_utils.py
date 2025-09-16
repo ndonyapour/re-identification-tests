@@ -29,8 +29,6 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from reidentification_utils import get_subject_and_date, SHAPE_FEATURES, TEXTURE_FEATURES
 
-RANDOM_STATE = 123
-
 
 def remove_constant_features(X_train: np.ndarray, X_test: np.ndarray, threshold: float = 0.0) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
@@ -75,7 +73,7 @@ def remove_constant_features(X_train: np.ndarray, X_test: np.ndarray, threshold:
 
 def patient_level_three_way_split(X: np.ndarray, y: np.ndarray, patient_ids: np.ndarray, 
                                 test_size: float = 0.2, val_size: float = 0.2, 
-                                random_state: int = RANDOM_STATE, remove_constant: bool = True
+                                random_state: int = 42, remove_constant: bool = True
                                 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
     Split data into train/validation/test ensuring no patient appears in multiple sets.
@@ -178,7 +176,7 @@ def patient_level_three_way_split(X: np.ndarray, y: np.ndarray, patient_ids: np.
 
 # Update the prepare_features_Nyxus function to use 3-way split
 def prepare_features_Nyxus(features_dir: str, image_dir: str, info_csv: str,
-                                   features_group: str = "All", test_size: float = 0.2, 
+                                   features_group: str = "All", random_state: int = 42, test_size: float = 0.2, 
                                    val_size: float = 0.2, classes: list[str] = ['CN', 'MCI', 'AD']):
     """
     Prepare features with proper 3-way split to ensure fair validation/test comparison.
@@ -194,7 +192,6 @@ def prepare_features_Nyxus(features_dir: str, image_dir: str, info_csv: str,
     adni_info_df = pd.read_excel(info_csv, engine="openpyxl")
     labels = []
     patient_ids = []
-    
     for file_name in file_names:
         if file_name.endswith(".csv"):
             file_path = os.path.join(features_dir, file_name)
@@ -239,13 +236,13 @@ def prepare_features_Nyxus(features_dir: str, image_dir: str, info_csv: str,
     
     # Use the 3-way split instead of 2-way + random validation
     X_train, X_val, X_test, y_train, y_val, y_test, patient_ids_train, patient_ids_val, patient_ids_test = patient_level_three_way_split(
-        X, y, patient_ids, test_size=test_size, val_size=val_size, random_state=RANDOM_STATE
+        X, y, patient_ids, test_size=test_size, val_size=val_size, random_state=random_state
     )
     
     return X_train, X_val, X_test, y_train, y_val, y_test, le.classes_, patient_ids_train, patient_ids_val, patient_ids_test
 
 
-def prepare_features_BrainAIC(features_csv_path: str, info_csv: str, test_size: float = 0.2, val_size: float = 0.2, 
+def prepare_features_BrainAIC(features_csv_path: str, info_csv: str, random_state: int = 42, test_size: float = 0.2, val_size: float = 0.2, 
     classes: list[str] = ['CN', 'MCI', 'AD']) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, list]:
     """
     Prepare features for BrainAIC with patient-level train/test split.
@@ -279,32 +276,10 @@ def prepare_features_BrainAIC(features_csv_path: str, info_csv: str, test_size: 
     
     # Use the 3-way split instead of 2-way + random validation
     X_train, X_val, X_test, y_train, y_val, y_test, patient_ids_train, patient_ids_val, patient_ids_test = patient_level_three_way_split(
-        X, y, patient_ids, test_size=test_size, val_size=val_size, random_state=RANDOM_STATE
+        X, y, patient_ids, test_size=test_size, val_size=val_size, random_state=random_state
     )
     
     return X_train, X_val, X_test, y_train, y_val, y_test, le.classes_, patient_ids_train, patient_ids_val, patient_ids_test
-    
-
-# def plot_results(y_true, y_pred, class_names):
-#     """
-#     Plot confusion matrix and print classification report.
-#     """
-#     # Print classification report
-#     print("\nClassification Report:")
-#     print(classification_report(y_true, y_pred, target_names=class_names))
-    
-#     # Plot confusion matrix
-#     cm = confusion_matrix(y_true, y_pred)
-#     plt.figure(figsize=(10, 8))
-#     sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
-#                 xticklabels=class_names,
-#                 yticklabels=class_names)
-#     plt.title('Confusion Matrix')
-#     plt.ylabel('True Label')
-#     plt.xlabel('Predicted Label')
-#     plt.tight_layout()
-#     plt.savefig('confusion_matrix.png')
-#     plt.close()
 
 def get_hidden_size(input_size):
     if input_size >= 500:
@@ -365,44 +340,6 @@ class ADNIClassifier(nn.Module):
         x = self.layers[-1](x)
         return x
 
-# class ADNIClassifier(nn.Module):
-#     def __init__(self, input_size, hidden_size=128, dropout_rate=0.3, num_hidden_layers=1, num_classes=3):
-#         """
-#         Simple neural network for ADNI classification with noise augmentation.
-        
-#         Args:
-#             input_size: Number of input features
-#             hidden_size: Size of hidden layer (default: 128)
-#             num_hidden_layers: Number of additional hidden layers
-#             dropout_rate: Dropout rate for regularization
-#             noise_factor: Factor for input noise augmentation
-#         """
-#         super().__init__()
-#         self.network = nn.Sequential(
-#             # Layer 1
-#             nn.Linear(input_size, hidden_size),
-#             nn.BatchNorm1d(hidden_size),
-#             nn.ReLU(),
-#             nn.Dropout(dropout_rate),
-            
-#             # Layer 2
-#             nn.Linear(hidden_size, hidden_size // 2),
-#             nn.BatchNorm1d(hidden_size // 2),
-#             nn.ReLU(),
-#             nn.Dropout(dropout_rate),
-#              # Layer 3
-#             nn.Linear(hidden_size // 2, hidden_size // 4),
-#             nn.BatchNorm1d(hidden_size // 4),
-#             nn.ReLU(),
-#             nn.Dropout(dropout_rate),
-            
-#             # Output layer (NO SOFTMAX)
-#             nn.Linear(hidden_size // 4, num_classes)
-#         )
-
-#     def forward(self, x):
-#         x = self.network(x)
-#         return x
 
 def plot_training_curves(classifier, save_path='training_curves.png'):
     """
@@ -479,11 +416,11 @@ def plot_training_curves(classifier, save_path='training_curves.png'):
 
 
 
-def search_best_model(X_train, y_train, patient_ids_train, cv_folds=3):
+def search_best_model(X_train, y_train, patient_ids_train, random_state: int = 42, cv_folds=3):
     """
     Train with patient-aware cross-validation - improved approach.
     """
-    torch.manual_seed(RANDOM_STATE)
+    torch.manual_seed(random_state)
     input_size = X_train.shape[1]
     # Convert data types
     X_train = X_train.astype(np.float32)
@@ -513,7 +450,7 @@ def search_best_model(X_train, y_train, patient_ids_train, cv_folds=3):
         criterion=nn.CrossEntropyLoss,
         criterion__weight=class_weight_tensor,
         optimizer=torch.optim.Adam,
-        optimizer__lr=0.001,
+        optimizer__lr=0.0001,
         optimizer__weight_decay=1e-4,
         train_split=False,  # No validation split during GridSearchCV
         device='cuda' if torch.cuda.is_available() else 'cpu',
@@ -524,12 +461,12 @@ def search_best_model(X_train, y_train, patient_ids_train, cv_folds=3):
     params = {
         'module__num_hidden_layers': [1, 2],
         'module__dropout_rate': [0.4, 0.5],  # Increase dropout options
-        'max_epochs': [80, 120],  # Reduce max epochs to prevent overtraining
+        'max_epochs': [50, 80, 120],  # Reduce max epochs to prevent overtraining
         'batch_size': [32, 64],
     }
 
     # Use GroupKFold to ensure patients don't appear in both train and validation
-    group_kfold = StratifiedGroupKFold(n_splits=cv_folds, shuffle=True, random_state=RANDOM_STATE)
+    group_kfold = StratifiedGroupKFold(n_splits=cv_folds, shuffle=True, random_state=random_state)
     
     gs = GridSearchCV(
         classifier, 
@@ -550,12 +487,22 @@ def search_best_model(X_train, y_train, patient_ids_train, cv_folds=3):
     return gs.best_params_
 
     
-def train_model(X_train, X_val, y_train, y_val, best_params):
+def create_validation_split(val_dataset):
+    """
+    Create a validation split function that can be pickled.
+    This replaces the lambda function that causes serialization issues.
+    """
+    def validation_split(dataset, y, **kwargs):
+        return dataset, val_dataset
+    return validation_split
+
+
+def train_model(X_train, X_val, y_train, y_val, best_params, random_state: int = 42):
     """
     Train model using explicit validation set instead of random splits.
     This ensures fair comparison between validation and test performance.
     """
-    torch.manual_seed(RANDOM_STATE)
+    torch.manual_seed(random_state)
     input_size = X_train.shape[1]
     
     # Convert data types
@@ -605,7 +552,7 @@ def train_model(X_train, X_val, y_train, y_val, best_params):
         optimizer=torch.optim.Adam,
         optimizer__lr=0.0001,
         optimizer__weight_decay=1e-4,
-        train_split=lambda dataset, y, **kwargs: (dataset, val_dataset),
+        train_split=create_validation_split(val_dataset),
         device='cuda' if torch.cuda.is_available() else 'cpu',
         callbacks=[lr_policy, train_acc, valid_acc, early_stopping],
         verbose=0
@@ -628,7 +575,7 @@ def train_model(X_train, X_val, y_train, y_val, best_params):
     if final_train_acc > val_acc + 0.1:
         print("⚠️  WARNING: Potential overfitting detected (train acc >> val acc)")
     
-    return classifier
+    return classifier, {'train_acc': final_train_acc, 'val_acc': val_acc}
 
 
 
@@ -704,7 +651,7 @@ def calculate_patient_level_results(y_pred, y_true, patient_ids, class_names=Non
 
 def apply_smote_resampling(X_train: np.ndarray, y_train: np.ndarray,
                           method: str = 'smote', 
-                          random_state: int = RANDOM_STATE) -> tuple[np.ndarray, np.ndarray]:
+                          random_state: int = 42) -> tuple[np.ndarray, np.ndarray]:
     """
     Apply SMOTE or other resampling techniques to handle class imbalance.
     
@@ -804,3 +751,160 @@ def apply_smote_resampling(X_train: np.ndarray, y_train: np.ndarray,
         print(f"Error applying {method}: {str(e)}")
         print("Falling back to original data without resampling.")
         return X_train, y_train
+
+
+def print_averaged_classification_report(averaged_report, class_names, n_runs):
+    """
+    Print averaged classification report in a readable format.
+    
+    Args:
+        averaged_report: Averaged report dictionary
+        class_names: List of class names
+        n_runs: Number of runs averaged
+    """
+    print(f"\n{'='*80}")
+    print(f"📊 AVERAGED CLASSIFICATION REPORT ACROSS {n_runs} RUNS")
+    print(f"{'='*80}")
+    
+    # Header
+    print(f"{'':>12} {'precision':>12} {'recall':>12} {'f1-score':>12} {'support':>12}")
+    print(f"{'':>12} {'mean ± std':>12} {'mean ± std':>12} {'mean ± std':>12} {'mean ± std':>12}")
+    print("-" * 80)
+    
+    # Per-class results
+    for class_name in class_names:
+        if class_name in averaged_report:
+            precision = averaged_report[class_name]['precision']
+            recall = averaged_report[class_name]['recall']
+            f1 = averaged_report[class_name]['f1-score']
+            support = averaged_report[class_name]['support']
+            
+            print(f"{class_name:>12} "
+                  f"{precision['mean']:.2f}±{precision['std']:.2f}    "
+                  f"{recall['mean']:.2f}±{recall['std']:.2f}    "
+                  f"{f1['mean']:.2f}±{f1['std']:.2f}    "
+                  f"{support['mean']:.0f}±{support['std']:.0f}")
+    
+    print()
+    
+    # Overall accuracy
+    if 'accuracy' in averaged_report:
+        accuracy = averaged_report['accuracy']
+        print(f"{'accuracy':>12} {'':>12} {'':>12} "
+              f"{accuracy['mean']:.2f}±{accuracy['std']:.2f}    "
+              f"{sum(averaged_report[cls]['support']['mean'] for cls in class_names):.0f}")
+    
+    # Macro and weighted averages
+    for avg_type in ['macro avg', 'weighted avg']:
+        if avg_type in averaged_report:
+            precision = averaged_report[avg_type]['precision']
+            recall = averaged_report[avg_type]['recall']
+            f1 = averaged_report[avg_type]['f1-score']
+            
+            print(f"{avg_type:>12} "
+                  f"{precision['mean']:.2f}±{precision['std']:.2f}    "
+                  f"{recall['mean']:.2f}±{recall['std']:.2f}    "
+                  f"{f1['mean']:.2f}±{f1['std']:.2f}    "
+                  f"{sum(averaged_report[cls]['support']['mean'] for cls in class_names):.0f}")
+
+def print_simple_averaged_report(all_reports, class_names, n_runs):
+    """
+    Print a simple averaged classification report.
+    """
+    print(f"\n{'='*60}")
+    print(f"📊 AVERAGED RESULTS ACROSS {n_runs} RUNS")
+    print(f"{'='*60}")
+    
+    # Calculate averages for key metrics
+    metrics = {}
+    
+    # Overall accuracy
+    accuracies = [report['accuracy'] for report in all_reports]
+    metrics['accuracy'] = {'mean': np.mean(accuracies), 'std': np.std(accuracies)}
+    
+    # Macro averages
+    macro_precision = [report['macro avg']['precision'] for report in all_reports]
+    macro_recall = [report['macro avg']['recall'] for report in all_reports]
+    macro_f1 = [report['macro avg']['f1-score'] for report in all_reports]
+    
+    metrics['macro_precision'] = {'mean': np.mean(macro_precision), 'std': np.std(macro_precision)}
+    metrics['macro_recall'] = {'mean': np.mean(macro_recall), 'std': np.std(macro_recall)}
+    metrics['macro_f1'] = {'mean': np.mean(macro_f1), 'std': np.std(macro_f1)}
+    
+    # Per-class F1 scores
+    for class_name in class_names:
+        class_f1 = [report[class_name]['f1-score'] for report in all_reports if class_name in report]
+        metrics[f'{class_name}_f1'] = {'mean': np.mean(class_f1), 'std': np.std(class_f1)}
+    
+    # Print results
+    print(f"Overall Accuracy:     {metrics['accuracy']['mean']:.4f} ± {metrics['accuracy']['std']:.4f}")
+    print(f"Macro Precision:      {metrics['macro_precision']['mean']:.4f} ± {metrics['macro_precision']['std']:.4f}")
+    print(f"Macro Recall:         {metrics['macro_recall']['mean']:.4f} ± {metrics['macro_recall']['std']:.4f}")
+    print(f"Macro F1-Score:       {metrics['macro_f1']['mean']:.4f} ± {metrics['macro_f1']['std']:.4f}")
+    
+    print(f"\nPer-Class F1-Scores:")
+    for class_name in class_names:
+        key = f'{class_name}_f1'
+        if key in metrics:
+            print(f"  {class_name}: {metrics[key]['mean']:.4f} ± {metrics[key]['std']:.4f}")
+
+
+
+def calculate_averaged_classification_report(all_reports, class_names):
+    """
+    Calculate averaged classification report across multiple runs.
+    
+    Args:
+        all_reports: List of classification report dictionaries
+        class_names: List of class names
+        
+    Returns:
+        Dictionary with averaged metrics and standard deviations
+    """
+    import numpy as np
+    
+    averaged_report = {}
+    
+    # Metrics to average
+    metrics = ['precision', 'recall', 'f1-score']
+    average_types = ['macro avg', 'weighted avg']
+    
+    # Initialize storage for each class
+    for class_name in class_names:
+        averaged_report[class_name] = {}
+        for metric in metrics:
+            values = [report[class_name][metric] for report in all_reports if class_name in report]
+            averaged_report[class_name][metric] = {
+                'mean': np.mean(values),
+                'std': np.std(values),
+                'values': values
+            }
+        
+        # Support (should be the same across runs, but let's average anyway)
+        supports = [report[class_name]['support'] for report in all_reports if class_name in report]
+        averaged_report[class_name]['support'] = {
+            'mean': np.mean(supports),
+            'std': np.std(supports),
+            'values': supports
+        }
+    
+    # Average the macro and weighted averages
+    for avg_type in average_types:
+        averaged_report[avg_type] = {}
+        for metric in metrics:
+            values = [report[avg_type][metric] for report in all_reports if avg_type in report]
+            averaged_report[avg_type][metric] = {
+                'mean': np.mean(values),
+                'std': np.std(values),
+                'values': values
+            }
+    
+    # Overall accuracy
+    accuracy_values = [report['accuracy'] for report in all_reports]
+    averaged_report['accuracy'] = {
+        'mean': np.mean(accuracy_values),
+        'std': np.std(accuracy_values),
+        'values': accuracy_values
+    }
+    
+    return averaged_report
