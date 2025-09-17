@@ -418,6 +418,9 @@ def compute_precision_recall(matches_csv: str, info_csv: str, output_dir: str) -
     print(f'R@1 image level: {results.same_px.sum() / len(results):.2%}')
 
     # Change direction of score: it's a distance (higher = farther), we want higher = closer
+   
+    # d = results['top_distance'].to_numpy()
+    # score = 1 - (d - d.min())/(d.max()-d.min()+1e-12)
     results['rescaled_score'] = results['top_distance'].max() - results['top_distance']
     
     # Create output directory if it doesn't exist
