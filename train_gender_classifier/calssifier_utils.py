@@ -302,7 +302,10 @@ def prepare_features_BrainAIC(features_csv_path: str, info_csv: str, random_stat
         labels.append(label)
         features_cols = [f for f in features_df.columns if f.startswith('Feature_')]
         features_list.append(features_df[features_df['image_path'] == nifti_path][features_cols].values[0, :])
-        image_vol_names.append(nifti_path)
+        
+        suffixes: str = "".join(Path(nifti_path).suffixes)
+        stem: str = Path(nifti_path).name[: -len(suffixes)]
+        image_vol_names.append(stem)
 
     # Convert to arrays
     X = np.array(features_list)
@@ -313,11 +316,11 @@ def prepare_features_BrainAIC(features_csv_path: str, info_csv: str, random_stat
     y = le.fit_transform(labels)
     
     # Use the 3-way split instead of 2-way + random validation
-    X_train, X_val, X_test, y_train, y_val, y_test, patient_ids_train, patient_ids_val, patient_ids_test = patient_level_three_way_split(
-        X, y, patient_ids, test_size=test_size, val_size=val_size, random_state=random_state
+    X_train, X_val, X_test, y_train, y_val, y_test, patient_ids_train, patient_ids_val, patient_ids_test, image_vol_names_test = patient_level_three_way_split(
+        X, y, patient_ids, image_vol_names, test_size=test_size, val_size=val_size, random_state=random_state
     )
     
-    return X_train, X_val, X_test, y_train, y_val, y_test, le.classes_, patient_ids_train, patient_ids_val, patient_ids_test
+    return X_train, X_val, X_test, y_train, y_val, y_test, le.classes_, patient_ids_train, patient_ids_val, patient_ids_test, image_vol_names_test
 
 def get_hidden_size(input_size):
     if input_size < 10:
@@ -455,6 +458,7 @@ def search_best_model(X_train, y_train, patient_ids_train, random_state: int = 4
     """
     Train with patient-aware cross-validation - improved approach.
     """
+    np.random.seed(random_state)
     torch.manual_seed(random_state)
     input_size = X_train.shape[1]
     # Convert data types
@@ -472,8 +476,8 @@ def search_best_model(X_train, y_train, patient_ids_train, random_state: int = 4
     train_acc = EpochScoring(scoring='balanced_accuracy', on_train=True, name='train_acc', lower_is_better=False)
     early_stopping = EarlyStopping(
         monitor='valid_loss',
-        patience=20,  # Increase patience
-        threshold=0.005,
+        patience=25,  # Increase from 20
+        threshold=0.001,  # Reduce from 0.005 for more stability
         lower_is_better=True
     )
     
@@ -510,8 +514,9 @@ def search_best_model(X_train, y_train, patient_ids_train, random_state: int = 4
         cv=group_kfold,  # This provides patient-aware validation
         scoring='balanced_accuracy', 
         verbose=2,
-        n_jobs=1  # Reduce parallelism to avoid memory issues
-    )
+        n_jobs=1,
+      )  # Keep this as 1 for reproducibility
+
     
     # Pass patient_ids as groups parameter
     gs.fit(X_train, y_train, groups=patient_ids_train)
@@ -527,6 +532,7 @@ def train_model(X_train, X_val, y_train, y_val, best_params, random_state: int =
     Train model using explicit validation set instead of random splits.
     This ensures fair comparison between validation and test performance.
     """
+    np.random.seed(random_state)
     torch.manual_seed(random_state)
     input_size = X_train.shape[1]
     

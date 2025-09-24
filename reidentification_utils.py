@@ -290,6 +290,82 @@ def find_closest_neighbors_BrainAIC(features_csv_path: str,
     return combined_results
 
 
+def find_closest_neighbors_Nyxus_topfea(features_dir: str, image_dir: str, info_csv: str, features_names: list[str],
+                         n_neighbors: int = 10, standardize: bool = False, num_top: int = 10,
+                         exclude_same_date: bool = False, distance_threshold: float = -1.0,
+                         output_dir: str | None = None) -> None:
+    """
+    Find the closest neighbors for each image in the dataset.
+    
+    Args:
+        features_dir: Directory containing feature files
+        image_data_csv: Path to the image data CSV file
+        n_neighbors: Number of neighbors to find
+        standardize: Whether to standardize features
+        features_group: Which features to use ("All", "Shape", or "Texture")
+        exclude_same_date: Whether to exclude matches from same date for same patient
+        distance_threshold: Only keep matches with distance <= threshold (-1 to disable)
+        output_dir: Directory to save matches.csv (if None, don't save)
+    """
+
+    
+    # load metadata
+    metadata = {
+        'file_name': [],
+        'patient_id': [],
+        'scan_date': []
+    }
+    features_list = []
+
+    file_names = os.listdir(features_dir)
+    
+    for file_name in file_names:
+        if file_name.endswith(".csv"):
+            file_path = os.path.join(features_dir, file_name)
+            image_path = os.path.join(image_dir, file_name.replace(".csv", ".nii.gz"))
+            nifti_img = nib.load(image_path)
+            subject_id, scan_date = get_subject_and_date(file_name.replace(".csv", ".nii.gz"))
+            metadata['file_name'].append(file_name.replace(".csv", ".nii.gz"))
+            metadata['patient_id'].append(subject_id)
+            metadata['scan_date'].append(scan_date)
+
+            # load features
+            feat_df = pd.read_csv(file_path,
+                                engine='python',  # More robust parsing
+                                encoding='utf-8', sep=',', usecols=lambda x: x != 'Unnamed: 0')  
+            
+            # To remove specific columns, you can do:
+            columns_to_remove = ['intensity_image', 'mask_image', 'ROI_label','Unnamed: 0', 'index', 'id']  # add any column names you want to remove
+            numeric_cols = [col for col in feat_df.select_dtypes(include=[np.number]).columns 
+                            if col not in columns_to_remove] 
+            
+            numeric_cols = [col for col in numeric_cols if col in features_names]
+            features_list.append(feat_df[numeric_cols].values[0, :])
+        
+    metadata_df = pd.DataFrame(metadata)
+    features = np.array(features_list)
+    #add features to the metadata_df
+    #import pdb; pdb.set_trace()
+    rate_results = find_closest_neighbors(features, metadata_df, n_neighbors, exclude_same_date, 
+                                    distance_threshold, "Nyxus " + str(num_top), standardize, output_dir)
+    ap_results = compute_precision_recall(os.path.join(output_dir, 'matches_diff_dates.csv'), info_csv, output_dir)
+
+    # Combine both results into one dictionary
+    combined_results = {
+        'features_name': num_top,
+        'standardized': rate_results[1],
+        'n_features': rate_results[2],
+        'r_at_1_img': float(rate_results[3].strip('%')),  # Convert "X.X%" to float
+        'r_at_10_img': float(rate_results[4].strip('%')),
+        'image_ap': ap_results['image_ap'],
+        'r_at_1_patient': float(rate_results[5].strip('%')),
+        'r_at_10_patient': float(rate_results[6].strip('%')),
+        'patient_ap': ap_results['patient_ap'],
+    }
+    return combined_results
+
+
+
 def find_closest_neighbors_Nyxus(features_dir: str, image_dir: str, info_csv: str, n_neighbors: int = 10, 
                          standardize: bool = False, features_group: str = "All",
                          exclude_same_date: bool = False, distance_threshold: float = -1.0,

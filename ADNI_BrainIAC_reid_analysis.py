@@ -17,7 +17,7 @@ if __name__ == "__main__":
         results = find_closest_neighbors_BrainAIC(
             features_csv_path=features_dir,
             info_csv_path=info_csv,
-            n_neighbors=10,
+            n_neighbors=100,
             standardize=standardize,
             exclude_same_date=True,
             distance_threshold=-1.0,
