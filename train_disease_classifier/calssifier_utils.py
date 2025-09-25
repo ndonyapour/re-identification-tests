@@ -24,56 +24,19 @@ from skorch.callbacks import Callback
 from sklearn.model_selection import StratifiedGroupKFold
 from sklearn.preprocessing import RobustScaler
 from sklearn.model_selection import StratifiedKFold
+from skorch.helper import predefined_split
+from skorch.dataset import Dataset
+from sklearn.metrics import balanced_accuracy_score
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from reidentification_utils import get_subject_and_date, SHAPE_FEATURES, TEXTURE_FEATURES
 
 
-def remove_constant_features(X_train: np.ndarray, X_test: np.ndarray, threshold: float = 0.0) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """
-    Remove constant and near-constant features using VarianceThreshold.
-    
-    Args:
-        X_train: Training feature matrix
-        X_test: Test feature matrix  
-        threshold: Variance threshold - features with variance below this are removed
-                  (default: 0.0 removes only constant features)
-    
-    Returns:
-        tuple: (X_train_filtered, X_test_filtered, selected_features_mask)
-    """
-    # Create variance threshold selector
-    variance_selector = VarianceThreshold(threshold=threshold)
-    
-    # Fit on training data and transform both train and test
-    X_train_filtered = variance_selector.fit_transform(X_train)
-    X_test_filtered = variance_selector.transform(X_test)
-    
-    # Get mask of selected features
-    selected_features_mask = variance_selector.get_support()
-    
-    # Report results
-    n_original = X_train.shape[1]
-    n_selected = X_train_filtered.shape[1] 
-    n_removed = n_original - n_selected
-    
-    print(f"Feature filtering results:")
-    print(f"  Original features: {n_original}")
-    print(f"  Removed constant/low-variance features: {n_removed}")
-    print(f"  Remaining features: {n_selected}")
-    print(f"  Variance threshold: {threshold}")
-    
-    if n_removed > 0:
-        removed_indices = np.where(~selected_features_mask)[0]
-        print(f"  Removed feature indices: {removed_indices[:10]}{'...' if len(removed_indices) > 10 else ''}")
-    
-    return X_train_filtered, X_test_filtered, selected_features_mask
-
 
 def patient_level_three_way_split(X: np.ndarray, y: np.ndarray, patient_ids: np.ndarray, 
-                                test_size: float = 0.2, val_size: float = 0.2, 
-                                random_state: int = 42, remove_constant: bool = True
+                                random_state, test_size: float = 0.2, val_size: float = 0.2, 
+                                remove_constant: bool = True
                                 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
     Split data into train/validation/test ensuring no patient appears in multiple sets.
@@ -156,6 +119,7 @@ def patient_level_three_way_split(X: np.ndarray, y: np.ndarray, patient_ids: np.
         
         selected_features_mask = variance_selector.get_support()
         n_removed = np.sum(~selected_features_mask)
+        np.save(f"models/selected_features_mask_{random_state}.npy", selected_features_mask)
         print(f"Removed {n_removed} constant features")
 
     # Print split statistics
@@ -175,8 +139,8 @@ def patient_level_three_way_split(X: np.ndarray, y: np.ndarray, patient_ids: np.
     return X_train, X_val, X_test, y_train, y_val, y_test, patient_ids_train, patient_ids_val, patient_ids_test
 
 # Update the prepare_features_Nyxus function to use 3-way split
-def prepare_features_Nyxus(features_dir: str, image_dir: str, info_csv: str,
-                                   features_group: str = "All", random_state: int = 42, test_size: float = 0.2, 
+def prepare_features_Nyxus(features_dir: str, image_dir: str, info_csv: str, random_state,
+                                   features_group: str = "All", test_size: float = 0.2, 
                                    val_size: float = 0.2, classes: list[str] = ['CN', 'MCI', 'AD']):
     """
     Prepare features with proper 3-way split to ensure fair validation/test comparison.
@@ -242,7 +206,7 @@ def prepare_features_Nyxus(features_dir: str, image_dir: str, info_csv: str,
     return X_train, X_val, X_test, y_train, y_val, y_test, le.classes_, patient_ids_train, patient_ids_val, patient_ids_test
 
 
-def prepare_features_BrainAIC(features_csv_path: str, info_csv: str, random_state: int = 42, test_size: float = 0.2, val_size: float = 0.2, 
+def prepare_features_BrainAIC(features_csv_path: str, info_csv: str, random_state, test_size: float = 0.2, val_size: float = 0.2, 
     classes: list[str] = ['CN', 'MCI', 'AD']) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, list]:
     """
     Prepare features for BrainAIC with patient-level train/test split.
@@ -281,17 +245,27 @@ def prepare_features_BrainAIC(features_csv_path: str, info_csv: str, random_stat
     
     return X_train, X_val, X_test, y_train, y_val, y_test, le.classes_, patient_ids_train, patient_ids_val, patient_ids_test
 
+# def get_hidden_size(input_size):
+#     if input_size >= 500:
+#         return 512
+#     elif input_size >= 200:
+#         return 128
+#     elif input_size >= 100:
+#         return 128
+#     elif input_size >= 50:
+#         return 64
+#     else:
+#         return 32
+
 def get_hidden_size(input_size):
-    if input_size >= 500:
-        return 512
-    elif input_size >= 200:
-        return 128
-    elif input_size >= 100:
-        return 128
-    elif input_size >= 50:
-        return 64
-    else:
+    if input_size < 10:
         return 32
+    elif input_size > 500:
+        return 512
+    elif input_size > 100:
+        return 128
+    else:
+        return 64
 
 
 class ADNIClassifier(nn.Module):
@@ -416,7 +390,7 @@ def plot_training_curves(classifier, save_path='training_curves.png'):
 
 
 
-def search_best_model(X_train, y_train, patient_ids_train, random_state: int = 42, cv_folds=3):
+def search_best_model(X_train, y_train, patient_ids_train, random_state, cv_folds=3):
     """
     Train with patient-aware cross-validation - improved approach.
     """
@@ -487,17 +461,7 @@ def search_best_model(X_train, y_train, patient_ids_train, random_state: int = 4
     return gs.best_params_
 
     
-def create_validation_split(val_dataset):
-    """
-    Create a validation split function that can be pickled.
-    This replaces the lambda function that causes serialization issues.
-    """
-    def validation_split(dataset, y, **kwargs):
-        return dataset, val_dataset
-    return validation_split
-
-
-def train_model(X_train, X_val, y_train, y_val, best_params, random_state: int = 42):
+def train_model(X_train, X_val, y_train, y_val, best_params, random_state):
     """
     Train model using explicit validation set instead of random splits.
     This ensures fair comparison between validation and test performance.
@@ -534,6 +498,7 @@ def train_model(X_train, X_val, y_train, y_val, best_params, random_state: int =
         lower_is_better=True
     )
     
+    valid_ds = Dataset(X_val, y_val)
     # Create explicit validation dataset
     from torch.utils.data import TensorDataset
     val_dataset = TensorDataset(torch.FloatTensor(X_val), torch.LongTensor(y_val))
@@ -552,7 +517,7 @@ def train_model(X_train, X_val, y_train, y_val, best_params, random_state: int =
         optimizer=torch.optim.Adam,
         optimizer__lr=0.0001,
         optimizer__weight_decay=1e-4,
-        train_split=create_validation_split(val_dataset),
+        train_split=predefined_split(valid_ds),
         device='cuda' if torch.cuda.is_available() else 'cpu',
         callbacks=[lr_policy, train_acc, valid_acc, early_stopping],
         verbose=0
@@ -560,22 +525,20 @@ def train_model(X_train, X_val, y_train, y_val, best_params, random_state: int =
 
     classifier.fit(X_train, y_train)
     
-    # Evaluate on validation set
+    # Calculate proper training accuracy in evaluation mode (no dropout, proper batch norm)
+    print("Calculating final training accuracy in evaluation mode...")
+    train_pred = classifier.predict(X_train)
+    train_acc = balanced_accuracy_score(y_train, train_pred)
+   
+
+    print(f"Final validation accuracy")
     val_pred = classifier.predict(X_val)
-    val_acc = np.mean(val_pred == y_val)
-    
-    print(f"\n{'='*60}")
-    print("TRAINING COMPLETED WITH EXPLICIT VALIDATION")
-    print(f"{'='*60}")
-    print(f"Final validation accuracy: {val_acc:.4f}")
-    print(f"Training epochs: {len(classifier.history)}")
-    
-    # Check for overfitting
-    final_train_acc = classifier.history[-1]['train_acc']
-    if final_train_acc > val_acc + 0.1:
+    valid_acc = balanced_accuracy_score(y_val, val_pred)
+
+    if train_acc > valid_acc + 0.1:
         print("⚠️  WARNING: Potential overfitting detected (train acc >> val acc)")
     
-    return classifier, {'train_acc': final_train_acc, 'val_acc': val_acc}
+    return classifier, {'train_acc': train_acc, 'val_acc': valid_acc}
 
 
 
@@ -649,9 +612,9 @@ def calculate_patient_level_results(y_pred, y_true, patient_ids, class_names=Non
 
 
 
-def apply_smote_resampling(X_train: np.ndarray, y_train: np.ndarray,
-                          method: str = 'smote', 
-                          random_state: int = 42) -> tuple[np.ndarray, np.ndarray]:
+def apply_smote_resampling(X_train: np.ndarray, y_train: np.ndarray, random_state,
+                          method: str = 'smote'
+                          ) -> tuple[np.ndarray, np.ndarray]:
     """
     Apply SMOTE or other resampling techniques to handle class imbalance.
     

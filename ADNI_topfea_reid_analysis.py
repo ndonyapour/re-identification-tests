@@ -179,6 +179,33 @@ def print_summary_table(results_df, ranking_key):
     print(f"Best Combined:   {int(results_df.loc[best_combined_idx, 'num_features'])} features "
           f"({combined_score.loc[best_combined_idx]:.3f})")
 
+
+def save_best_features(ranking_key, num_top):
+    """
+    Save the best features to a file.
+    """
+    image_dir = "/home/ubuntu/data/ADNI_dataset/BrainIAC_processed/images/"
+    features_dir = "/home/ubuntu/data/ADNI_dataset/Nyxus_features/"
+    info_csv = "/home/ubuntu/data/ADNI_dataset/BrainIAC_input_csv/brainiac_ADNI_info.csv"
+    base_output_dir = "./Nyxus_topfea_reid_analysis"
+    # Load feature rankings
+    features_rank_df = pd.read_csv("./train_disease_classifier/models/rf_feature_ranking_All_42.csv")
+
+    if ranking_key == "rank":
+        features_rank_df.sort_values(by=ranking_key, ascending=True, inplace=True)
+    else:
+        features_rank_df.sort_values(by=ranking_key, ascending=False, inplace=True)
+
+    # Fix: Use double brackets for multiple column selection
+    best_features_df = features_rank_df[['feature', f'{ranking_key}']]
+    best_features_df.to_csv(f"./{base_output_dir}/best_features_{ranking_key}_{num_top}.csv", index=False)
+    
+    print(f"✅ Saved top {num_top} features based on {ranking_key} to:")
+    print(f"   {base_output_dir}/best_features_{ranking_key}_{num_top}.csv")
+
+
+        
+
 if __name__ == "__main__":
     # Run the analysis
     base_output_dir = "./Nyxus_topfea_reid_analysis"
@@ -186,17 +213,19 @@ if __name__ == "__main__":
     
     # Check if results already exist, otherwise run analysis
     #results_file = f"./{base_output_dir}/top_features_performance.csv"
-    for ranking_key in ["rank", "drop_column_importance"]:
-        results_df = pd.read_csv(f"./{base_output_dir}/top_features_performance_{ranking_key}.csv")
+    # for ranking_key in ["rank", "drop_column_importance"]:
+    #     results_df = pd.read_csv(f"./{base_output_dir}/top_features_performance_{ranking_key}.csv")
         
-        #results_df = analyze_top_features_performance(ranking_key=ranking_key)
+    #     #results_df = analyze_top_features_performance(ranking_key=ranking_key)
         
-        # Create plots
-        print("📈 Creating performance plots...")
-        #create_summary_plot(results_df, base_output_dir, ranking_key=ranking_key)
+    #     # Create plots
+    #     print("📈 Creating performance plots...")
+    #     #create_summary_plot(results_df, base_output_dir, ranking_key=ranking_key)
         
-        # Print summary
-        print_summary_table(results_df, ranking_key=ranking_key)
+    #     # Print summary
+    #     print_summary_table(results_df, ranking_key=ranking_key)
         
-        print("\n✅ Analysis complete!")
-        print(f"📁 Check './{base_output_dir}/' for all results and plots") 
+    #     print("\n✅ Analysis complete!")
+    #     print(f"📁 Check './{base_output_dir}/' for all results and plots") 
+
+    save_best_features(ranking_key="rank", num_top=25)
