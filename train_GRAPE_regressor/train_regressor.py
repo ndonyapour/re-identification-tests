@@ -214,6 +214,9 @@ def train_rf_regressor(X_train, y_train, X_test, y_test, random_state=42):
         X_train, y_train, X_test, k=1000  # Very few features
     )
     
+    print(f"X_train_selected.shape: {X_train_selected.shape}")
+    print(f"X_test_selected.shape: {X_test_selected.shape}")
+    
     # Get conservative parameters
     best_params = search_best_random_forest_regressor(X_train_selected, y_train, random_state)
     

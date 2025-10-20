@@ -208,11 +208,11 @@ def save_best_features(ranking_key, num_top):
 
 if __name__ == "__main__":
     # Run the analysis
-    base_output_dir = "./Nyxus_topfea_reid_analysis"
-    print("🚀 Starting Top Features Re-Identification Analysis...")
+    # base_output_dir = "./Nyxus_topfea_reid_analysis"
+    # print("🚀 Starting Top Features Re-Identification Analysis...")
     
-    # Check if results already exist, otherwise run analysis
-    #results_file = f"./{base_output_dir}/top_features_performance.csv"
+    # # Check if results already exist, otherwise run analysis
+    # results_file = f"./{base_output_dir}/top_features_performance.csv"
     # for ranking_key in ["rank", "drop_column_importance"]:
     #     results_df = pd.read_csv(f"./{base_output_dir}/top_features_performance_{ranking_key}.csv")
         
@@ -220,7 +220,7 @@ if __name__ == "__main__":
         
     #     # Create plots
     #     print("📈 Creating performance plots...")
-    #     #create_summary_plot(results_df, base_output_dir, ranking_key=ranking_key)
+    #     create_summary_plot(results_df, base_output_dir, ranking_key=ranking_key)
         
     #     # Print summary
     #     print_summary_table(results_df, ranking_key=ranking_key)
@@ -228,4 +228,4 @@ if __name__ == "__main__":
     #     print("\n✅ Analysis complete!")
     #     print(f"📁 Check './{base_output_dir}/' for all results and plots") 
 
-    save_best_features(ranking_key="rank", num_top=25)
+    save_best_features(ranking_key="rank", num_top=40)

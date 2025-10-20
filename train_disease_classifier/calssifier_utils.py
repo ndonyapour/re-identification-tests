@@ -104,12 +104,13 @@ def patient_level_three_way_split(X: np.ndarray, y: np.ndarray, patient_ids: np.
     patient_ids_test = patient_ids[test_mask]
     
     # Scale features using only training data
-    scaler = RobustScaler()
-    X_train = scaler.fit_transform(X_train)
-    X_val = scaler.transform(X_val)
-    X_test = scaler.transform(X_test)
+    # scaler = RobustScaler()
+    # X_train = scaler.fit_transform(X_train)
+    # X_val = scaler.transform(X_val)
+    # X_test = scaler.transform(X_test)
 
     # Remove constant features after scaling
+    print(f"Removing constant features", X_train.shape, X_val.shape, X_test.shape)
     if remove_constant:
         # Fit on training, transform all sets
         variance_selector = VarianceThreshold(threshold=0.0)
@@ -121,6 +122,7 @@ def patient_level_three_way_split(X: np.ndarray, y: np.ndarray, patient_ids: np.
         n_removed = np.sum(~selected_features_mask)
         np.save(f"models/selected_features_mask_{random_state}.npy", selected_features_mask)
         print(f"Removed {n_removed} constant features")
+    print(f"After removing constant features", X_train.shape, X_val.shape, X_test.shape)
 
     # Print split statistics
     print(f"Patient-level 3-way split:")
@@ -202,6 +204,10 @@ def prepare_features_Nyxus(features_dir: str, image_dir: str, info_csv: str, ran
     X_train, X_val, X_test, y_train, y_val, y_test, patient_ids_train, patient_ids_val, patient_ids_test = patient_level_three_way_split(
         X, y, patient_ids, test_size=test_size, val_size=val_size, random_state=random_state
     )
+    
+    print(f"X_train.shape: {X_train.shape}")
+    print(f"X_val.shape: {X_val.shape}")
+    print(f"X_test.shape: {X_test.shape}")
     
     return X_train, X_val, X_test, y_train, y_val, y_test, le.classes_, patient_ids_train, patient_ids_val, patient_ids_test
 

@@ -207,4 +207,4 @@ def train_logistic_regression_Nyxus():
 
 if __name__ == "__main__":
     #train_models_Nyxus(features_group="Shape", random_states=[42, 123, 1234])
-    train_models_BrainAIC(random_states=[42, 123, 1234])
+    train_models_BrainAIC(random_states=[42, 123, 1007])

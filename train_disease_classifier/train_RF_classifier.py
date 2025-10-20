@@ -20,6 +20,7 @@ from sklearn.metrics import make_scorer, f1_score
 from sklearn.model_selection import RandomizedSearchCV
 from sklearn.metrics import classification_report
 from calssifier_utils import calculate_averaged_classification_report, print_averaged_classification_report
+from sklearn.feature_selection import f_classif
 
 #from xgboost import XGBClassifier
 
@@ -134,6 +135,28 @@ def search_best_rf_model(X_train, y_train, patient_ids_train, random_state: int 
     
     return grid_search.best_params_, grid_search
 
+def select_features(X_train, y_train, X_test, k=100):
+    """Very conservative feature selection"""
+    print(f"🔧 Conservative feature selection: top {k} features...")
+    
+    # Remove constant features
+    variance_selector = VarianceThreshold(threshold=0.05)  # Higher threshold
+    X_train_var = variance_selector.fit_transform(X_train)
+    X_test_var = variance_selector.transform(X_test)
+    
+    print(f"After variance threshold (0.05): {X_train_var.shape[1]} features")
+    
+    # Select fewer features
+    if X_train_var.shape[1] > k:
+        feature_selector = SelectKBest(score_func=f_classif, k=k)
+        X_train_selected = feature_selector.fit_transform(X_train_var, y_train)
+        X_test_selected = feature_selector.transform(X_test_var)
+        print(f"After feature selection: {X_train_selected.shape[1]} features")
+    else:
+        X_train_selected = X_train_var
+        X_test_selected = X_test_var
+    
+    return X_train_selected, X_test_selected
 
 def train_random_forest(X_train, y_train, best_params, random_state):
     """
@@ -243,8 +266,8 @@ def train_rf_nyxus(features_group: str = "All", random_states: list[int] = [42, 
         os.makedirs("./models", exist_ok=True)
 
         # Save the model using joblib
-        # joblib.dump(rf_model, f"./models/rf_model_Nyxus_{features_group}_{random_state}.pkl")
-        # print(f"Model saved to: ./models/rf_model_Nyxus_{features_group}_{random_state}.pkl")
+        joblib.dump(rf_model, f"./models/rf_model_Nyxus_{features_group}_{random_state}.pkl")
+        print(f"Model saved to: ./models/rf_model_Nyxus_{features_group}_{random_state}.pkl")
         X_test = X_test.astype(np.float32)
         test_predictions = rf_model.predict(X_test)
         test_accuracy = np.mean(test_predictions == y_test)
@@ -341,6 +364,6 @@ def train_rf_brainiac(random_states: list[int] = [42, 123, 1234]):
 # Update the main function
 if __name__ == "__main__":
     train_rf_nyxus(features_group="All", random_states=[42])
-    #train_rf_brainiac(random_states=[42, 123, 1234])
+    #train_rf_brainiac(random_states=[42, 123, 1007])
 
 
