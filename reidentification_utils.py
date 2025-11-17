@@ -22,19 +22,23 @@ TEST_RESULTS_TEMPLATE = """
 ** R@10 (patient): {r_at_10_patient:.1f}%
 """
 
-SHAPE_FEATURES = [
+NYXUS_SHAPE_FEATURES = [
     "3AREA",
     "3AREA_2_VOLUME",
     "3COMPACTNESS1",
     "3COMPACTNESS2",
+    "3ELONGATION",
+    "3FLATNESS",
+    "3LEAST_AXIS_LEN",
+    "3MAJOR_AXIS_LEN",
     "3MESH_VOLUME",
+    "3MINOR_AXIS_LEN",
     "3SPHERICAL_DISPROPORTION",
     "3SPHERICITY",
-    "3SURFACE_AREA",
     "3VOLUME_CONVEXHULL",
     "3VOXEL_VOLUME"
 ]
-TEXTURE_FEATURES = [
+NYXUS_TEXTURE_FEATURES = [
     '3GLCM_ACOR', '3GLCM_ASM', '3GLCM_CLUPROM', '3GLCM_CLUSHADE', '3GLCM_CLUTEND', '3GLCM_CONTRAST', '3GLCM_CORRELATION', 
     '3GLCM_DIFAVE', '3GLCM_DIFENTRO', '3GLCM_DIFVAR', '3GLCM_DIS', '3GLCM_ENERGY', '3GLCM_ENTROPY', '3GLCM_HOM1', '3GLCM_HOM2', 
     '3GLCM_ID', '3GLCM_IDN', '3GLCM_IDM', '3GLCM_IDMN', '3GLCM_INFOMEAS1', '3GLCM_INFOMEAS2', '3GLCM_IV', '3GLCM_JAVE', '3GLCM_JE', 
@@ -58,6 +62,70 @@ TEXTURE_FEATURES = [
     '3GLRLM_RLNN_AVE', '3GLRLM_RP_AVE', '3GLRLM_GLV_AVE', '3GLRLM_RV_AVE', '3GLRLM_RE_AVE', '3GLRLM_LGLRE_AVE', '3GLRLM_HGLRE_AVE', 
     '3GLRLM_SRLGLE_AVE', '3GLRLM_SRHGLE_AVE', '3GLRLM_LRLGLE_AVE', '3GLRLM_LRHGLE_AVE']
 
+
+PYRADIOMICS_TEXTURE_FEATURES = [
+    'original_glcm_Autocorrelation', 'original_glcm_ClusterProminence', 'original_glcm_ClusterShade',
+    'original_glcm_ClusterTendency', 'original_glcm_Contrast', 'original_glcm_Correlation',
+    'original_glcm_DifferenceAverage', 'original_glcm_DifferenceEntropy',
+    'original_glcm_DifferenceVariance', 'original_glcm_Id', 'original_glcm_Idm',
+    'original_glcm_Idmn', 'original_glcm_Idn', 'original_glcm_Imc1', 'original_glcm_Imc2',
+    'original_glcm_InverseVariance', 'original_glcm_JointAverage',
+    'original_glcm_JointEnergy', 'original_glcm_JointEntropy', 'original_glcm_MCC',
+    'original_glcm_MaximumProbability', 'original_glcm_SumAverage',
+    'original_glcm_SumEntropy', 'original_glcm_SumSquares',
+    'original_gldm_DependenceEntropy', 'original_gldm_DependenceNonUniformity',
+    'original_gldm_DependenceNonUniformityNormalized', 'original_gldm_DependenceVariance',
+    'original_gldm_GrayLevelNonUniformity', 'original_gldm_GrayLevelVariance',
+    'original_gldm_HighGrayLevelEmphasis', 'original_gldm_LargeDependenceEmphasis',
+    'original_gldm_LargeDependenceHighGrayLevelEmphasis',
+    'original_gldm_LargeDependenceLowGrayLevelEmphasis',
+    'original_gldm_LowGrayLevelEmphasis', 'original_gldm_SmallDependenceEmphasis',
+    'original_gldm_SmallDependenceHighGrayLevelEmphasis',
+    'original_gldm_SmallDependenceLowGrayLevelEmphasis',
+    'original_glrlm_GrayLevelNonUniformity', 'original_glrlm_GrayLevelNonUniformityNormalized',
+    'original_glrlm_GrayLevelVariance', 'original_glrlm_HighGrayLevelRunEmphasis',
+    'original_glrlm_LongRunEmphasis', 'original_glrlm_LongRunHighGrayLevelEmphasis',
+    'original_glrlm_LongRunLowGrayLevelEmphasis', 'original_glrlm_LowGrayLevelRunEmphasis',
+    'original_glrlm_RunEntropy', 'original_glrlm_RunLengthNonUniformity',
+    'original_glrlm_RunLengthNonUniformityNormalized', 'original_glrlm_RunPercentage',
+    'original_glrlm_RunVariance', 'original_glrlm_ShortRunEmphasis',
+    'original_glrlm_ShortRunHighGrayLevelEmphasis', 'original_glrlm_ShortRunLowGrayLevelEmphasis',
+    'original_glszm_GrayLevelNonUniformity', 'original_glszm_GrayLevelNonUniformityNormalized',
+    'original_glszm_GrayLevelVariance', 'original_glszm_HighGrayLevelZoneEmphasis',
+    'original_glszm_LargeAreaEmphasis', 'original_glszm_LargeAreaHighGrayLevelEmphasis',
+    'original_glszm_LargeAreaLowGrayLevelEmphasis', 'original_glszm_LowGrayLevelZoneEmphasis',
+    'original_glszm_SizeZoneNonUniformity', 'original_glszm_SizeZoneNonUniformityNormalized',
+    'original_glszm_SmallAreaEmphasis', 'original_glszm_SmallAreaHighGrayLevelEmphasis',
+    'original_glszm_SmallAreaLowGrayLevelEmphasis', 'original_glszm_ZoneEntropy',
+    'original_glszm_ZonePercentage', 'original_glszm_ZoneVariance',
+    'original_ngtdm_Busyness', 'original_ngtdm_Coarseness',
+    'original_ngtdm_Complexity', 'original_ngtdm_Contrast', 'original_ngtdm_Strength'
+]
+
+PYRADIOMICS_SHAPE_FEATURES = [
+    'original_shape_Elongation', 'original_shape_Flatness', 'original_shape_LeastAxisLength',
+    'original_shape_MajorAxisLength', 'original_shape_Maximum2DDiameterColumn',
+    'original_shape_Maximum2DDiameterRow', 'original_shape_Maximum2DDiameterSlice',
+    'original_shape_Maximum3DDiameter', 'original_shape_MeshVolume',
+    'original_shape_MinorAxisLength', 'original_shape_Sphericity',
+    'original_shape_SurfaceArea', 'original_shape_SurfaceVolumeRatio',
+    'original_shape_VoxelVolume'
+]
+
+
+PYRADIOMICS_FIRSTORDER_FEATURES = [
+    'original_firstorder_10Percentile', 'original_firstorder_90Percentile', 'original_firstorder_Energy',
+    'original_firstorder_Entropy', 'original_firstorder_InterquartileRange',
+    'original_firstorder_Kurtosis', 'original_firstorder_Maximum',
+    'original_firstorder_MeanAbsoluteDeviation', 'original_firstorder_Mean',
+    'original_firstorder_Median', 'original_firstorder_Minimum',
+    'original_firstorder_Range', 'original_firstorder_RobustMeanAbsoluteDeviation',
+    'original_firstorder_RootMeanSquared', 'original_firstorder_Skewness',
+    'original_firstorder_TotalEnergy', 'original_firstorder_Uniformity',
+    'original_firstorder_Variance'
+]
+
+PYRADIOMICS_ALL_FEATURES = PYRADIOMICS_SHAPE_FEATURES + PYRADIOMICS_TEXTURE_FEATURES + PYRADIOMICS_FIRSTORDER_FEATURES
 
 def get_subject_and_date(filename: str) -> tuple[str, str]:
     """
@@ -416,9 +484,9 @@ def find_closest_neighbors_Nyxus(features_dir: str, image_dir: str, info_csv: st
                             if col not in columns_to_remove] 
             
             if features_group == "Shape":
-                numeric_cols = [col for col in numeric_cols if col in SHAPE_FEATURES]
+                numeric_cols = [col for col in numeric_cols if col in NYXUS_SHAPE_FEATURES]
             elif features_group == "Texture":
-                numeric_cols = [col for col in numeric_cols if col in TEXTURE_FEATURES]
+                numeric_cols = [col for col in numeric_cols if col in NYXUS_TEXTURE_FEATURES]
             elif features_group == "All":
                 pass
             else:
@@ -446,7 +514,88 @@ def find_closest_neighbors_Nyxus(features_dir: str, image_dir: str, info_csv: st
         'patient_ap': ap_results['patient_ap'],
     }
     return combined_results
+
+
+def find_closest_neighbors_Pyradiomics(features_dir: str, image_dir: str, info_csv: str, n_neighbors: int = 10, 
+                         standardize: bool = False, features_group: str = "All",
+                         exclude_same_date: bool = False, distance_threshold: float = -1.0,
+                         output_dir: str | None = None) -> None:
+    """
+    Find the closest neighbors for each image in the dataset.
     
+    Args:
+        features_dir: Directory containing feature files
+        image_data_csv: Path to the image data CSV file
+        n_neighbors: Number of neighbors to find
+        standardize: Whether to standardize features
+        features_group: Which features to use ("All", "Shape", or "Texture")
+        exclude_same_date: Whether to exclude matches from same date for same patient
+        distance_threshold: Only keep matches with distance <= threshold (-1 to disable)
+        output_dir: Directory to save matches.csv (if None, don't save)
+    """
+
+    
+    # load metadata
+    metadata = {
+        'file_name': [],
+        'patient_id': [],
+        'scan_date': []
+    }
+    features_list = []
+
+    file_names = os.listdir(features_dir)
+    
+    for file_name in file_names:
+        if file_name.endswith(".csv"):
+            file_path = os.path.join(features_dir, file_name)
+            image_path = os.path.join(image_dir, file_name.replace(".csv", ".nii.gz"))
+            nifti_img = nib.load(image_path)
+            subject_id, scan_date = get_subject_and_date(file_name.replace(".csv", ".nii.gz"))
+            metadata['file_name'].append(file_name.replace(".csv", ".nii.gz"))
+            metadata['patient_id'].append(subject_id)
+            metadata['scan_date'].append(scan_date)
+
+            # load features
+            feat_df = pd.read_csv(file_path,
+                                engine='python',  # More robust parsing
+                                encoding='utf-8', sep=',', usecols=lambda x: x != 'Unnamed: 0')  
+            
+            if features_group == "All":
+                # Ensure consistent ordering by using the defined list order
+                numeric_cols = [col for col in PYRADIOMICS_ALL_FEATURES if col in feat_df.columns]
+            elif features_group == "Shape":
+                numeric_cols = [col for col in PYRADIOMICS_SHAPE_FEATURES if col in feat_df.columns]
+            elif features_group == "Texture":
+                numeric_cols = [col for col in PYRADIOMICS_TEXTURE_FEATURES if col in feat_df.columns]
+            elif features_group == "Firstorder":
+                numeric_cols = [col for col in PYRADIOMICS_FIRSTORDER_FEATURES if col in feat_df.columns]
+            else:
+                raise ValueError(f"Invalid features group: {features_group}. Available groups: All, Shape, Texture, Firstorder")
+            
+            features_list.append(feat_df[numeric_cols].values[0, :])
+        
+    metadata_df = pd.DataFrame(metadata)
+    features = np.array(features_list)
+    #add features to the metadata_df
+    #import pdb; pdb.set_trace()
+    rate_results = find_closest_neighbors(features, metadata_df, n_neighbors, exclude_same_date, 
+                                    distance_threshold, "Pyradiomics " + features_group, standardize, output_dir)
+    ap_results = compute_precision_recall(os.path.join(output_dir, 'matches_diff_dates.csv'), info_csv, output_dir)
+
+    # Combine both results into one dictionary
+    combined_results = {
+        'features_name': rate_results[0],
+        'standardized': rate_results[1],
+        'n_features': rate_results[2],
+        'r_at_1_img': float(rate_results[3].strip('%')),  # Convert "X.X%" to float
+        'r_at_10_img': float(rate_results[4].strip('%')),
+        'image_ap': ap_results['image_ap'],
+        'r_at_1_patient': float(rate_results[5].strip('%')),
+        'r_at_10_patient': float(rate_results[6].strip('%')),
+        'patient_ap': ap_results['patient_ap'],
+    }
+    return combined_results
+
 
 def print_results(results: List[List[str]], headers: List[str]) -> None:
     table = tabulate(results, headers=headers, tablefmt="fancy_grid")

@@ -16,31 +16,31 @@ if __name__ == "__main__":
     results_lists = []
 
     for standardize in [False, True]:
-        for features_group in ["All" , "Shape", "Texture"]:
+        for features_group in ["All" , "Texture", "Shape"]:
             results = find_closest_neighbors_Nyxus(
-            features_dir=features_dir,
-            image_dir=image_dir,
-            info_csv=info_csv,
-            features_group=features_group,
-            n_neighbors=100,
-            standardize=standardize,
-            exclude_same_date=True,
-            distance_threshold=-1.0,
-            output_dir=output_dir
-        )
+                features_dir=features_dir,
+                image_dir=image_dir,
+                info_csv=info_csv,
+                features_group=features_group,
+                n_neighbors=100,
+                standardize=standardize,
+                exclude_same_date=True,
+                distance_threshold=-1.0,
+                output_dir=output_dir
+            )
 
-        # Convert results dictionary to list format for printing
+            # Convert results dictionary to list format for printing
             results_list = [
-            results['features_name'],
-            results['standardized'],
-            results['n_features'],
-            f"{results['r_at_1_img']}%",
-            f"{results['r_at_10_img']}%",
-            f"{results['image_ap']:.1%}",
-            f"{results['r_at_1_patient']}%",
-            f"{results['r_at_10_patient']}%",
-            f"{results['patient_ap']:.1%}"
-            ]
+                results['features_name'],
+                results['standardized'],
+                results['n_features'],
+                f"{results['r_at_1_img']}%",
+                f"{results['r_at_10_img']}%",
+                f"{results['image_ap']:.1%}",
+                f"{results['r_at_1_patient']}%",
+                f"{results['r_at_10_patient']}%",
+                f"{results['patient_ap']:.1%}"
+                ]
 
             results_lists.append(results_list)
 

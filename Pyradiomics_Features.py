@@ -1,15 +1,4 @@
 Features_3D = [
-    'diagnostics_Versions_PyRadiomics', 'diagnostics_Versions_Numpy',
-    'diagnostics_Versions_SimpleITK', 'diagnostics_Versions_PyWavelet',
-    'diagnostics_Versions_Python', 'diagnostics_Configuration_Settings',
-    'diagnostics_Configuration_EnabledImageTypes', 'diagnostics_Image-original_Hash',
-    'diagnostics_Image-original_Dimensionality', 'diagnostics_Image-original_Spacing',
-    'diagnostics_Image-original_Size', 'diagnostics_Image-original_Mean',
-    'diagnostics_Image-original_Minimum', 'diagnostics_Image-original_Maximum',
-    'diagnostics_Mask-original_Hash', 'diagnostics_Mask-original_Spacing',
-    'diagnostics_Mask-original_Size', 'diagnostics_Mask-original_BoundingBox',
-    'diagnostics_Mask-original_VoxelNum', 'diagnostics_Mask-original_VolumeNum',
-    'diagnostics_Mask-original_CenterOfMassIndex', 'diagnostics_Mask-original_CenterOfMass',
     'original_shape_Elongation', 'original_shape_Flatness', 'original_shape_LeastAxisLength',
     'original_shape_MajorAxisLength', 'original_shape_Maximum2DDiameterColumn',
     'original_shape_Maximum2DDiameterRow', 'original_shape_Maximum2DDiameterSlice',
@@ -64,26 +53,18 @@ Features_3D = [
     'original_ngtdm_Complexity', 'original_ngtdm_Contrast', 'original_ngtdm_Strength'
 ]
 
-Features_2D = [
-    'diagnostics_Versions_PyRadiomics', 'diagnostics_Versions_Numpy',
-    'diagnostics_Versions_SimpleITK', 'diagnostics_Versions_PyWavelet',
-    'diagnostics_Versions_Python', 'diagnostics_Configuration_Settings',
-    'diagnostics_Configuration_EnabledImageTypes', 'diagnostics_Image-original_Hash',
-    'diagnostics_Image-original_Dimensionality', 'diagnostics_Image-original_Spacing',
-    'diagnostics_Image-original_Size', 'diagnostics_Image-original_Mean',
-    'diagnostics_Image-original_Minimum', 'diagnostics_Image-original_Maximum',
-    'diagnostics_Mask-original_Hash', 'diagnostics_Mask-original_Spacing',
-    'diagnostics_Mask-original_Size', 'diagnostics_Mask-original_BoundingBox',
-    'diagnostics_Mask-original_VoxelNum', 'diagnostics_Mask-original_VolumeNum',
-    'diagnostics_Mask-original_CenterOfMassIndex', 'diagnostics_Mask-original_CenterOfMass',
+SHAPE_Features_3D = [
     'original_shape_Elongation', 'original_shape_Flatness', 'original_shape_LeastAxisLength',
     'original_shape_MajorAxisLength', 'original_shape_Maximum2DDiameterColumn',
     'original_shape_Maximum2DDiameterRow', 'original_shape_Maximum2DDiameterSlice',
     'original_shape_Maximum3DDiameter', 'original_shape_MeshVolume',
     'original_shape_MinorAxisLength', 'original_shape_Sphericity',
     'original_shape_SurfaceArea', 'original_shape_SurfaceVolumeRatio',
-    'original_shape_VoxelVolume', 'original_firstorder_10Percentile',
-    'original_firstorder_90Percentile', 'original_firstorder_Energy',
+    'original_shape_VoxelVolume'
+]
+
+FIRSTORDER_Features_3D = [
+    'original_firstorder_10Percentile', 'original_firstorder_90Percentile', 'original_firstorder_Energy',
     'original_firstorder_Entropy', 'original_firstorder_InterquartileRange',
     'original_firstorder_Kurtosis', 'original_firstorder_Maximum',
     'original_firstorder_MeanAbsoluteDeviation', 'original_firstorder_Mean',
@@ -91,8 +72,11 @@ Features_2D = [
     'original_firstorder_Range', 'original_firstorder_RobustMeanAbsoluteDeviation',
     'original_firstorder_RootMeanSquared', 'original_firstorder_Skewness',
     'original_firstorder_TotalEnergy', 'original_firstorder_Uniformity',
-    'original_firstorder_Variance', 'original_glcm_Autocorrelation',
-    'original_glcm_ClusterProminence', 'original_glcm_ClusterShade',
+    'original_firstorder_Variance'
+]
+
+TEXTURE_Features_3D = [
+    'original_glcm_Autocorrelation', 'original_glcm_ClusterProminence', 'original_glcm_ClusterShade',
     'original_glcm_ClusterTendency', 'original_glcm_Contrast', 'original_glcm_Correlation',
     'original_glcm_DifferenceAverage', 'original_glcm_DifferenceEntropy',
     'original_glcm_DifferenceVariance', 'original_glcm_Id', 'original_glcm_Idm',
