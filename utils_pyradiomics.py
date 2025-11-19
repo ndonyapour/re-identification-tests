@@ -93,6 +93,161 @@ class PyRadiomicsExtractor:
         extractor.enableAllFeatures()
         
         return extractor
+
+    # Add this method to enable only specific features
+    def enable_specific_features(self, feature_names: List[str]) -> None:
+        """
+        Enable only specific PyRadiomics features by name.
+        This is much faster than calculating all features.
+        
+        Args:
+            feature_names: List of feature names to enable (e.g., ['original_firstorder_Mean', 'original_glcm_Contrast'])
+        """
+        # Disable all features first
+        self.extractor.disableAllFeatures()
+        
+        # Enable only the requested features
+        for feature_name in feature_names:
+            # Parse feature name to get class and feature
+            # Format: original_<class>_<feature>
+            if feature_name.startswith('original_'):
+                parts = feature_name.replace('original_', '').split('_', 1)
+                if len(parts) == 2:
+                    feature_class, feature = parts
+                    try:
+                        self.extractor.enableFeatureByName(feature_class, feature)
+                    except Exception as e:
+                        print(f"Warning: Could not enable {feature_name}: {e}")
+            else:
+                print(f"Warning: Feature {feature_name} doesn't match PyRadiomics naming convention")
+
+    # Add this method to get PyRadiomics features corresponding to Nyxus wholeslide
+    def get_pyradiomics_wholeslide_features(self) -> List[str]:
+        """
+        Get list of PyRadiomics features that correspond to Nyxus wholeslide features.
+        Note: PyRadiomics doesn't support directional features or specialized features.
+        
+        Returns:
+            List of PyRadiomics feature names that can be calculated
+        """
+        # Features that PyRadiomics can calculate (matching Nyxus wholeslide)
+        pyradiomics_wholeslide = [
+            # Firstorder (partial - only features PyRadiomics has)
+            'original_firstorder_10Percentile',
+            'original_firstorder_90Percentile',
+            'original_firstorder_Energy',
+            'original_firstorder_Entropy',
+            'original_firstorder_InterquartileRange',
+            'original_firstorder_Kurtosis',
+            'original_firstorder_Maximum',
+            'original_firstorder_MeanAbsoluteDeviation',
+            'original_firstorder_Mean',
+            'original_firstorder_Median',
+            'original_firstorder_Minimum',
+            'original_firstorder_Range',
+            'original_firstorder_RobustMeanAbsoluteDeviation',
+            'original_firstorder_RootMeanSquared',
+            'original_firstorder_Skewness',
+            'original_firstorder_TotalEnergy',
+            'original_firstorder_Uniformity',
+            'original_firstorder_Variance',
+            # Shape (PyRadiomics shape features - note: different from Nyxus PERIMETER/DIAMETER)
+            'original_shape_Elongation',
+            'original_shape_Flatness',
+            'original_shape_LeastAxisLength',
+            'original_shape_MajorAxisLength',
+            'original_shape_Maximum2DDiameterColumn',
+            'original_shape_Maximum2DDiameterRow',
+            'original_shape_Maximum2DDiameterSlice',
+            'original_shape_Maximum3DDiameter',
+            'original_shape_MeshVolume',
+            'original_shape_MinorAxisLength',
+            'original_shape_Sphericity',
+            'original_shape_SurfaceArea',
+            'original_shape_SurfaceVolumeRatio',
+            'original_shape_VoxelVolume',
+            # GLCM (averaged - PyRadiomics doesn't have directional)
+            'original_glcm_Autocorrelation',
+            'original_glcm_ClusterProminence',
+            'original_glcm_ClusterShade',
+            'original_glcm_ClusterTendency',
+            'original_glcm_Contrast',
+            'original_glcm_Correlation',
+            'original_glcm_DifferenceAverage',
+            'original_glcm_DifferenceEntropy',
+            'original_glcm_DifferenceVariance',
+            'original_glcm_Id',
+            'original_glcm_Idm',
+            'original_glcm_Idmn',
+            'original_glcm_Idn',
+            'original_glcm_Imc1',
+            'original_glcm_Imc2',
+            'original_glcm_InverseVariance',
+            'original_glcm_JointAverage',
+            'original_glcm_JointEnergy',
+            'original_glcm_JointEntropy',
+            'original_glcm_MCC',
+            'original_glcm_MaximumProbability',
+            'original_glcm_SumAverage',
+            'original_glcm_SumEntropy',
+            'original_glcm_SumSquares',
+            # GLRLM (averaged - PyRadiomics doesn't have directional)
+            'original_glrlm_GrayLevelNonUniformity',
+            'original_glrlm_GrayLevelNonUniformityNormalized',
+            'original_glrlm_GrayLevelVariance',
+            'original_glrlm_HighGrayLevelRunEmphasis',
+            'original_glrlm_LongRunEmphasis',
+            'original_glrlm_LongRunHighGrayLevelEmphasis',
+            'original_glrlm_LongRunLowGrayLevelEmphasis',
+            'original_glrlm_LowGrayLevelRunEmphasis',
+            'original_glrlm_RunEntropy',
+            'original_glrlm_RunLengthNonUniformity',
+            'original_glrlm_RunLengthNonUniformityNormalized',
+            'original_glrlm_RunPercentage',
+            'original_glrlm_RunVariance',
+            'original_glrlm_ShortRunEmphasis',
+            'original_glrlm_ShortRunHighGrayLevelEmphasis',
+            'original_glrlm_ShortRunLowGrayLevelEmphasis',
+            # GLSZM
+            'original_glszm_GrayLevelNonUniformity',
+            'original_glszm_GrayLevelNonUniformityNormalized',
+            'original_glszm_GrayLevelVariance',
+            'original_glszm_HighGrayLevelZoneEmphasis',
+            'original_glszm_LargeAreaEmphasis',
+            'original_glszm_LargeAreaHighGrayLevelEmphasis',
+            'original_glszm_LargeAreaLowGrayLevelEmphasis',
+            'original_glszm_LowGrayLevelZoneEmphasis',
+            'original_glszm_SizeZoneNonUniformity',
+            'original_glszm_SizeZoneNonUniformityNormalized',
+            'original_glszm_SmallAreaEmphasis',
+            'original_glszm_SmallAreaHighGrayLevelEmphasis',
+            'original_glszm_SmallAreaLowGrayLevelEmphasis',
+            'original_glszm_ZoneEntropy',
+            'original_glszm_ZonePercentage',
+            'original_glszm_ZoneVariance',
+            # GLDM
+            'original_gldm_DependenceEntropy',
+            'original_gldm_DependenceNonUniformity',
+            'original_gldm_DependenceNonUniformityNormalized',
+            'original_gldm_DependenceVariance',
+            'original_gldm_GrayLevelNonUniformity',
+            'original_gldm_GrayLevelVariance',
+            'original_gldm_HighGrayLevelEmphasis',
+            'original_gldm_LargeDependenceEmphasis',
+            'original_gldm_LargeDependenceHighGrayLevelEmphasis',
+            'original_gldm_LargeDependenceLowGrayLevelEmphasis',
+            'original_gldm_LowGrayLevelEmphasis',
+            'original_gldm_SmallDependenceEmphasis',
+            'original_gldm_SmallDependenceHighGrayLevelEmphasis',
+            'original_gldm_SmallDependenceLowGrayLevelEmphasis',
+            # NGTDM
+            'original_ngtdm_Busyness',
+            'original_ngtdm_Coarseness',
+            'original_ngtdm_Complexity',
+            'original_ngtdm_Contrast',
+            'original_ngtdm_Strength'
+        ]
+        return pyradiomics_wholeslide
     
     def extract_features_from_files(self, 
                                    image_path: str, 
@@ -156,67 +311,189 @@ class PyRadiomicsExtractor:
         except Exception as e:
             raise Exception(f"Error extracting features from {image_path}: {str(e)}")
 
-    
-    def extract_features_parallel(self, 
-                              image_paths: List[str], 
-                              mask_paths: List[str],
-                              csv_paths: List[str],
-                              num_workers: Optional[int] = None,
-                              label: int = 1) -> None:
+    def create_automatic_mask(self, image_array: np.ndarray, threshold_background: Optional[int] = None) -> sitk.Image:
         """
-        Extract features from multiple image-mask pairs using multiprocessing.
+        Create an automatic mask from image array.
+        If threshold_background is provided, creates mask excluding background pixels.
+        Otherwise, creates mask covering entire image.
         
         Args:
-            image_paths: List of image file paths
-            mask_paths: List of mask file paths
-            csv_paths: List of CSV output file paths (one per image)
-            num_workers: Number of worker processes (default: cpu_count())
-            label: Label value in mask to extract features from
-        """
-        if len(image_paths) != len(mask_paths):
-            raise ValueError("Number of images and masks must be equal")
-        if len(image_paths) != len(csv_paths):
-            raise ValueError("Number of images and CSV paths must be equal")
-        
-        # Determine number of workers
-        if num_workers is None:
-            num_workers = cpu_count()
-        num_workers = min(num_workers, len(image_paths))  # Don't use more workers than tasks
-        
-        print(f"Processing {len(image_paths)} images using {num_workers} workers")
-        
-        # Prepare arguments for worker function
-        extractor_params = {
-            'dimension': self.dimension,
-            'bin_width': self.bin_width,
-            'voxel_array_shift': self.voxel_array_shift,
-            'normalize': self.normalize,
-            'normalize_scale': self.normalize_scale,
-            'interpolator': self.interpolator,
-            'resample_pixel_spacing': self.resample_pixel_spacing
-        }
-        
-        # Create argument tuples for each task
-        tasks = list(zip(image_paths, mask_paths, csv_paths, [label] * len(image_paths)))
-        
-        # Use multiprocessing pool
-        with Pool(processes=num_workers) as pool:
-            # Create partial function with extractor params
-            worker_func = partial(_extract_features_worker, extractor_params=extractor_params)
+            image_array: Image as numpy array (2D or 3D)
+            threshold_background: Intensity threshold below which pixels are considered background (optional)
             
-            # Process in parallel with progress tracking
-            results = []
-            for i, result in enumerate(pool.starmap(worker_func, tasks), 1):
-                if result['success']:
-                    print(f"Completed {i}/{len(image_paths)}: {os.path.basename(result['image_path'])}")
-                else:
-                    print(f"Failed {i}/{len(image_paths)}: {os.path.basename(result['image_path'])} - {result['error']}")
-                results.append(result)
+        Returns:
+            SimpleITK Image object for the mask
+        """
+        # Create mask
+        if threshold_background is not None:
+            # Create mask excluding background (pixels above threshold)
+            mask_array = (image_array > threshold_background).astype(np.uint8)
+        else:
+            # Create mask covering entire image
+            mask_array = np.ones_like(image_array, dtype=np.uint8)
         
-        # Summary
-        successful = sum(1 for r in results if r['success'])
-        failed = len(results) - successful
-        print(f"\nProcessing complete: {successful} successful, {failed} failed")
+        # Convert to SimpleITK image
+        mask = sitk.GetImageFromArray(mask_array)
+        return mask
+
+    def extract_features_from_arrays(self,
+                                 image_array: np.ndarray,
+                                 mask_array: Optional[np.ndarray] = None,
+                                 threshold_background: Optional[int] = None,
+                                 label: int = 1) -> Dict[str, float]:
+        """
+        Extract features from image and mask arrays (no file I/O).
+        
+        Args:
+            image_array: Image as numpy array (2D or 3D)
+            mask_array: Mask as numpy array (optional, will be auto-generated if None)
+            threshold_background: Intensity threshold for background exclusion (optional)
+            label: Label value in mask (default: 1)
+            
+        Returns:
+            Dictionary of extracted features
+        """
+        try:
+            # Convert image array to SimpleITK image
+            image_sitk = sitk.GetImageFromArray(image_array)
+            
+            # Create mask if not provided
+            if mask_array is None:
+                mask_sitk = self.create_automatic_mask(image_array, threshold_background)
+            else:
+                mask_sitk = sitk.GetImageFromArray(mask_array.astype(np.uint8))
+                # Copy spacing/origin from image if available
+                if image_sitk.GetSpacing():
+                    mask_sitk.SetSpacing(image_sitk.GetSpacing())
+                if image_sitk.GetOrigin():
+                    mask_sitk.SetOrigin(image_sitk.GetOrigin())
+            
+            # Extract features using PyRadiomics (can accept SimpleITK images directly)
+            features = self.extractor.execute(image_sitk, mask_sitk, label=label)
+            
+            # Filter out non-numeric features (metadata)
+            numeric_features = {}
+            for key, value in features.items():
+                # Handle numpy arrays (extract scalar if single element)
+                if isinstance(value, np.ndarray):
+                    if value.size == 1:
+                        value = value.item()
+                    else:
+                        continue  # Skip multi-element arrays
+                
+                if isinstance(value, (int, float, np.number)):
+                    # Check for NaN values
+                    if np.isnan(value):
+                        continue
+                    numeric_features[key] = float(value)
+            
+            return numeric_features
+        
+        except Exception as e:
+            raise Exception(f"Error extracting features from arrays: {str(e)}")
+
+    def extract_features_from_image_only(self, 
+                                    image_path: Optional[str] = None,
+                                    csv_path: Optional[str] = None,
+                                    threshold_background: Optional[int] = None,
+                                    label: int = 1) -> Dict[str, float]:
+        """
+        Extract features from 2D whole slide image without requiring a mask.
+        Can work with either file path or image array.
+        
+        Args:
+            image_path: Path to the 2D image file (optional if image_array provided)
+            image_array: Image as numpy array (optional if image_path provided)
+            csv_path: Path to save the CSV file with features (optional)
+            threshold_background: Intensity threshold for background exclusion (optional)
+            label: Label value in mask (default: 1)
+            
+        Returns:
+            Dictionary of extracted features
+        """
+    # Load image if path provided
+        if image_path is not None:
+            image = sitk.ReadImage(image_path)
+            image_array = sitk.GetArrayFromImage(image)
+        elif image_array is None:
+            raise ValueError("Either image_path or image_array must be provided")
+        
+        # Extract features from arrays
+        features = self.extract_features_from_arrays(
+            image_array=image_array,
+            mask_array=None,
+            threshold_background=threshold_background,
+            label=label
+        )
+        
+        # Save to CSV if path provided
+        if csv_path is not None:
+            features_df = pd.DataFrame([features])
+            features_df.to_csv(csv_path, index=False)
+            print(f"Results saved to {csv_path}")
+        
+        return features
+
+    def extract_features_parallel(self, 
+                                image_paths: List[str], 
+                                mask_paths: List[str],
+                                csv_paths: List[str],
+                                num_workers: Optional[int] = None,
+                                label: int = 1) -> None:
+            """
+            Extract features from multiple image-mask pairs using multiprocessing.
+            
+            Args:
+                image_paths: List of image file paths
+                mask_paths: List of mask file paths
+                csv_paths: List of CSV output file paths (one per image)
+                num_workers: Number of worker processes (default: cpu_count())
+                label: Label value in mask to extract features from
+            """
+            if len(image_paths) != len(mask_paths):
+                raise ValueError("Number of images and masks must be equal")
+            if len(image_paths) != len(csv_paths):
+                raise ValueError("Number of images and CSV paths must be equal")
+            
+            # Determine number of workers
+            if num_workers is None:
+                num_workers = cpu_count()
+            num_workers = min(num_workers, len(image_paths))  # Don't use more workers than tasks
+            
+            print(f"Processing {len(image_paths)} images using {num_workers} workers")
+            
+            # Prepare arguments for worker function
+            extractor_params = {
+                'dimension': self.dimension,
+                'bin_width': self.bin_width,
+                'voxel_array_shift': self.voxel_array_shift,
+                'normalize': self.normalize,
+                'normalize_scale': self.normalize_scale,
+                'interpolator': self.interpolator,
+                'resample_pixel_spacing': self.resample_pixel_spacing
+            }
+            
+            # Create argument tuples for each task
+            tasks = list(zip(image_paths, mask_paths, csv_paths, [label] * len(image_paths)))
+            
+            # Use multiprocessing pool
+            with Pool(processes=num_workers) as pool:
+                # Create partial function with extractor params
+                worker_func = partial(_extract_features_worker, extractor_params=extractor_params)
+                
+                # Process in parallel with progress tracking
+                results = []
+                for i, result in enumerate(pool.starmap(worker_func, tasks), 1):
+                    if result['success']:
+                        print(f"Completed {i}/{len(image_paths)}: {os.path.basename(result['image_path'])}")
+                    else:
+                        print(f"Failed {i}/{len(image_paths)}: {os.path.basename(result['image_path'])} - {result['error']}")
+                    results.append(result)
+            
+            # Summary
+            successful = sum(1 for r in results if r['success'])
+            failed = len(results) - successful
+            print(f"\nProcessing complete: {successful} successful, {failed} failed")
 
     def get_available_features(self) -> Dict[str, List[str]]:
         """
@@ -431,3 +708,5 @@ def _extract_features_worker(image_path: str,
             'csv_path': csv_path,
             'error': str(e)
         }
+
+

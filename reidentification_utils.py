@@ -22,7 +22,7 @@ TEST_RESULTS_TEMPLATE = """
 ** R@10 (patient): {r_at_10_patient:.1f}%
 """
 
-NYXUS_SHAPE_FEATURES = [
+NYXUS_3D_SHAPE_FEATURES = [
     "3AREA",
     "3AREA_2_VOLUME",
     "3COMPACTNESS1",
@@ -39,7 +39,7 @@ NYXUS_SHAPE_FEATURES = [
     "3VOXEL_VOLUME"
 ]
 
-NYXUS_TEXTURE_FEATURES = [
+NYXUS_3D_TEXTURE_FEATURES = [
     '3GLCM_ACOR', '3GLCM_ASM', '3GLCM_CLUPROM', '3GLCM_CLUSHADE', '3GLCM_CLUTEND', '3GLCM_CONTRAST', '3GLCM_CORRELATION',
     '3GLCM_DIFAVE', '3GLCM_DIFENTRO', '3GLCM_DIFVAR', '3GLCM_DIS', '3GLCM_ENERGY', '3GLCM_ENTROPY', '3GLCM_HOM1', '3GLCM_HOM2',
     '3GLCM_ID', '3GLCM_IDN', '3GLCM_IDM', '3GLCM_IDMN', '3GLCM_INFOMEAS1', '3GLCM_INFOMEAS2', '3GLCM_IV', '3GLCM_JAVE', '3GLCM_JE',
@@ -65,7 +65,7 @@ NYXUS_TEXTURE_FEATURES = [
 ]
 
 
-NYXUS_FIRSTORDER_FEATURES = [
+NYXUS_3D_FIRSTORDER_FEATURES = [
     "3COV",
     "3COVERED_IMAGE_INTENSITY_RANGE",
     "3ENERGY",
@@ -104,9 +104,9 @@ NYXUS_FIRSTORDER_FEATURES = [
     "3UNIFORMITY_PIU"
 ]
 
-NYXUS_ALL_FEATURES = NYXUS_SHAPE_FEATURES + NYXUS_TEXTURE_FEATURES + NYXUS_FIRSTORDER_FEATURES
+NYXUS_3D_ALL_FEATURES = NYXUS_3D_SHAPE_FEATURES + NYXUS_3D_TEXTURE_FEATURES + NYXUS_3D_FIRSTORDER_FEATURES
 
-PYRADIOMICS_TEXTURE_FEATURES = [
+PYRADIOMICS_3D_TEXTURE_FEATURES = [
     'original_glcm_Autocorrelation', 'original_glcm_ClusterProminence', 'original_glcm_ClusterShade',
     'original_glcm_ClusterTendency', 'original_glcm_Contrast', 'original_glcm_Correlation',
     'original_glcm_DifferenceAverage', 'original_glcm_DifferenceEntropy',
@@ -145,7 +145,7 @@ PYRADIOMICS_TEXTURE_FEATURES = [
     'original_ngtdm_Complexity', 'original_ngtdm_Contrast', 'original_ngtdm_Strength'
 ]
 
-PYRADIOMICS_SHAPE_FEATURES = [
+PYRADIOMICS_3D_SHAPE_FEATURES = [
     'original_shape_Elongation', 'original_shape_Flatness', 'original_shape_LeastAxisLength',
     'original_shape_MajorAxisLength', 'original_shape_Maximum2DDiameterColumn',
     'original_shape_Maximum2DDiameterRow', 'original_shape_Maximum2DDiameterSlice',
@@ -156,7 +156,7 @@ PYRADIOMICS_SHAPE_FEATURES = [
 ]
 
 
-PYRADIOMICS_FIRSTORDER_FEATURES = [
+PYRADIOMICS_3D_FIRSTORDER_FEATURES = [
     'original_firstorder_10Percentile', 'original_firstorder_90Percentile', 'original_firstorder_Energy',
     'original_firstorder_Entropy', 'original_firstorder_InterquartileRange',
     'original_firstorder_Kurtosis', 'original_firstorder_Maximum',
@@ -168,7 +168,7 @@ PYRADIOMICS_FIRSTORDER_FEATURES = [
     'original_firstorder_Variance'
 ]
 
-PYRADIOMICS_ALL_FEATURES = PYRADIOMICS_SHAPE_FEATURES + PYRADIOMICS_TEXTURE_FEATURES + PYRADIOMICS_FIRSTORDER_FEATURES
+PYRADIOMICS_3D_ALL_FEATURES = PYRADIOMICS_3D_SHAPE_FEATURES + PYRADIOMICS_3D_TEXTURE_FEATURES + PYRADIOMICS_3D_FIRSTORDER_FEATURES
 
 def get_subject_and_date(filename: str) -> tuple[str, str]:
     """
@@ -527,13 +527,13 @@ def extract_Nyxus_features(features_dir: str, features_group: str = "All") -> pd
                                 encoding='utf-8', sep=',', usecols=lambda x: x != 'Unnamed: 0')  
                                 
             if features_group == "All":
-                numeric_cols = [col for col in feat_df.columns if col in NYXUS_ALL_FEATURES]
+                numeric_cols = [col for col in feat_df.columns if col in NYXUS_3D_ALL_FEATURES]
             elif features_group == "Shape":
-                numeric_cols = [col for col in feat_df.columns if col in NYXUS_SHAPE_FEATURES]
+                numeric_cols = [col for col in feat_df.columns if col in NYXUS_3D_SHAPE_FEATURES]
             elif features_group == "Texture":
-                numeric_cols = [col for col in feat_df.columns if col in NYXUS_TEXTURE_FEATURES]
+                numeric_cols = [col for col in feat_df.columns if col in NYXUS_3D_TEXTURE_FEATURES]
             elif features_group == "Firstorder":
-                numeric_cols = [col for col in feat_df.columns if col in NYXUS_FIRSTORDER_FEATURES]
+                numeric_cols = [col for col in feat_df.columns if col in NYXUS_3D_FIRSTORDER_FEATURES]
             else:
                 raise ValueError(f"Invalid features group: {features_group}")
             features_list.append(feat_df[numeric_cols].values[0, :])
@@ -586,13 +586,13 @@ def find_closest_neighbors_Nyxus(features_dir: str, image_dir: str, info_csv: st
                                 encoding='utf-8', sep=',', usecols=lambda x: x != 'Unnamed: 0')  
                                 
             if features_group == "All":
-                numeric_cols = [col for col in feat_df.columns if col in NYXUS_ALL_FEATURES]
+                numeric_cols = [col for col in feat_df.columns if col in NYXUS_3D_ALL_FEATURES]
             elif features_group == "Shape":
-                numeric_cols = [col for col in feat_df.columns if col in NYXUS_SHAPE_FEATURES]
+                numeric_cols = [col for col in feat_df.columns if col in NYXUS_3D_SHAPE_FEATURES]
             elif features_group == "Texture":
-                numeric_cols = [col for col in feat_df.columns if col in NYXUS_TEXTURE_FEATURES]
+                numeric_cols = [col for col in feat_df.columns if col in NYXUS_3D_TEXTURE_FEATURES]
             elif features_group == "Firstorder":
-                numeric_cols = [col for col in feat_df.columns if col in NYXUS_FIRSTORDER_FEATURES]
+                numeric_cols = [col for col in feat_df.columns if col in NYXUS_3D_FIRSTORDER_FEATURES]
             else:
                 raise ValueError(f"Invalid features group: {features_group}")
             features_list.append(feat_df[numeric_cols].values[0, :])
@@ -667,13 +667,13 @@ def find_closest_neighbors_Pyradiomics(features_dir: str, image_dir: str, info_c
             
             if features_group == "All":
                 # Ensure consistent ordering by using the defined list order
-                numeric_cols = [col for col in PYRADIOMICS_ALL_FEATURES if col in feat_df.columns]
+                numeric_cols = [col for col in PYRADIOMICS_3D_ALL_FEATURES if col in feat_df.columns]
             elif features_group == "Shape":
-                numeric_cols = [col for col in PYRADIOMICS_SHAPE_FEATURES if col in feat_df.columns]
+                numeric_cols = [col for col in PYRADIOMICS_3D_SHAPE_FEATURES if col in feat_df.columns]
             elif features_group == "Texture":
-                numeric_cols = [col for col in PYRADIOMICS_TEXTURE_FEATURES if col in feat_df.columns]
+                numeric_cols = [col for col in PYRADIOMICS_3D_TEXTURE_FEATURES if col in feat_df.columns]
             elif features_group == "Firstorder":
-                numeric_cols = [col for col in PYRADIOMICS_FIRSTORDER_FEATURES if col in feat_df.columns]
+                numeric_cols = [col for col in PYRADIOMICS_3D_FIRSTORDER_FEATURES if col in feat_df.columns]
             else:
                 raise ValueError(f"Invalid features group: {features_group}. Available groups: All, Shape, Texture, Firstorder")
             
