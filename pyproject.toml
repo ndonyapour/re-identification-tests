@@ -25,4 +25,20 @@ dependencies = [
     "imblearn>=0.0",
     "xgboost>=3.0.5",
     "plotly>=6.3.0",
+    "huggingface-hub>=0.34.4",
+    "pypng>=0.20220715.0",
+    "tensorflow>=2.18.1",
+    "tensorflow-text>=2.18.1",
+    "tensorflow-hub>=0.16.1",
 ]
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+# Disable automatic package discovery
+packages = []
+
+# If you want to include specific packages later, you can do:
+# packages = ["cxr"]  # Only if cxr/ has __init__.py
