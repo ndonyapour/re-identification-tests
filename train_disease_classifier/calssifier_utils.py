@@ -1,5 +1,10 @@
 import os
 import sys
+import warnings
+# Suppress PyTorch/NumPy compatibility warnings before importing PyTorch
+warnings.filterwarnings('ignore', category=UserWarning, message='.*Failed to initialize NumPy.*')
+warnings.filterwarnings('ignore', category=UserWarning, module='torch.*')
+
 import nibabel as nib
 import numpy as np
 
@@ -30,7 +35,8 @@ from sklearn.metrics import balanced_accuracy_score
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from reidentification_utils import get_subject_and_date, SHAPE_FEATURES, TEXTURE_FEATURES
+from reidentification_utils import (get_subject_and_date, NYXUS_SHAPE_FEATURES, NYXUS_TEXTURE_FEATURES, 
+                                    PYRADIOMICS_ALL_FEATURES, PYRADIOMICS_TEXTURE_FEATURES, PYRADIOMICS_SHAPE_FEATURES)
 
 
 
@@ -182,9 +188,9 @@ def prepare_features_Nyxus(features_dir: str, image_dir: str, info_csv: str, ran
                                 if col not in columns_to_remove] 
                 
                 if features_group == "Shape":
-                    numeric_cols = [col for col in numeric_cols if col in SHAPE_FEATURES]
+                    numeric_cols = [col for col in numeric_cols if col in NYXUS_SHAPE_FEATURES]
                 elif features_group == "Texture":
-                    numeric_cols = [col for col in numeric_cols if col in TEXTURE_FEATURES]
+                    numeric_cols = [col for col in numeric_cols if col in NYXUS_TEXTURE_FEATURES]
                 elif features_group == "All":
                     pass
                 else:
@@ -211,6 +217,70 @@ def prepare_features_Nyxus(features_dir: str, image_dir: str, info_csv: str, ran
     
     return X_train, X_val, X_test, y_train, y_val, y_test, le.classes_, patient_ids_train, patient_ids_val, patient_ids_test
 
+
+def prepare_features_Pyradiomics(features_dir: str, image_dir: str, info_csv: str, random_state,
+                                   features_group: str = "All", test_size: float = 0.2, 
+                                   val_size: float = 0.2, classes: list[str] = ['CN', 'MCI', 'AD']):
+    """
+    Prepare features with proper 3-way split to ensure fair validation/test comparison.
+    """
+    # ... existing feature loading code stays the same ...
+    metadata = {
+        'file_name': [],
+        'patient_id': [],
+        'scan_date': []
+    }
+    features_list = []
+    file_names = os.listdir(features_dir)
+    adni_info_df = pd.read_excel(info_csv, engine="openpyxl")
+    labels = []
+    patient_ids = []
+    for file_name in file_names:
+        if file_name.endswith(".csv"):
+            file_path = os.path.join(features_dir, file_name)
+            image_path = os.path.join(image_dir, file_name.replace(".csv", ".nii.gz"))
+            
+            # Extract subject ID from filename (not from NIfTI header)
+            subject_id, scan_date = get_subject_and_date(image_path)
+            
+            label = adni_info_df[(adni_info_df['Subject'] == subject_id)]['Group'].values[0]
+            if label in classes:
+                labels.append(label)
+                patient_ids.append(subject_id)
+
+                # load features
+                feat_df = pd.read_csv(file_path,
+                                    engine='python',  # More robust parsing
+                                    encoding='utf-8', sep=',', usecols=lambda x: x != 'Unnamed: 0')  
+            if features_group == "All":
+                numeric_cols = [col for col in feat_df.columns if col in PYRADIOMICS_ALL_FEATURES]
+            elif features_group == "Shape":
+                numeric_cols = [col for col in feat_df.columns if col in PYRADIOMICS_SHAPE_FEATURES]
+            elif features_group == "Texture":
+                numeric_cols = [col for col in feat_df.columns if col in PYRADIOMICS_TEXTURE_FEATURES]
+            else:
+                raise ValueError(f"Invalid features group: {features_group}. Available groups: All, Shape, Texture, Firstorder")
+                    
+            features_list.append(feat_df[numeric_cols].values[0, :])
+
+    # Convert to arrays
+    X = np.array(features_list)
+    patient_ids = np.array(patient_ids)
+    
+    # Convert diagnosis labels to numeric
+    le = LabelEncoder()
+    y = le.fit_transform(labels)
+    
+    # Use the 3-way split instead of 2-way + random validation
+    X_train, X_val, X_test, y_train, y_val, y_test, patient_ids_train, patient_ids_val, patient_ids_test = patient_level_three_way_split(
+        X, y, patient_ids, test_size=test_size, val_size=val_size, random_state=random_state
+    )
+    
+    print(f"X_train.shape: {X_train.shape}")
+    print(f"X_val.shape: {X_val.shape}")
+    print(f"X_test.shape: {X_test.shape}")
+    
+    return X_train, X_val, X_test, y_train, y_val, y_test, le.classes_, patient_ids_train, patient_ids_val, patient_ids_test
 
 def prepare_features_BrainAIC(features_csv_path: str, info_csv: str, random_state, test_size: float = 0.2, val_size: float = 0.2, 
     classes: list[str] = ['CN', 'MCI', 'AD']) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, list]:

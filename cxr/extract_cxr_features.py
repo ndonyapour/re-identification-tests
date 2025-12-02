@@ -7,13 +7,11 @@ import tensorflow_text as tf_text
 import tensorflow_hub as tf_hub
 from PIL import Image
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
+import threading
 
-
-import png
-import tensorflow as tf
-import tensorflow_text as tf_text
-import tensorflow_hub as tf_hub
-import numpy as np
+import logging
+logging.getLogger('tensorflow').setLevel(logging.ERROR)
 
 # Helper function for tokenizing text input
 def bert_tokenize(text):
@@ -87,8 +85,9 @@ class CXREmbeddingExtractor:
         """
         self.model_dir = model_dir
         self.qformer_model = None
-        self.vision_model = None
+        self.elixrc_model = None
         self._load_models()
+        self.model_lock = threading.Lock()  # Serialize GPU access
     
     def _load_models(self):
         """Load the CXR Foundation models."""
@@ -104,12 +103,12 @@ class CXREmbeddingExtractor:
         # Load ELIXR C vision encoder (for image preprocessing)
         vision_path = os.path.join(self.model_dir, 'elixr-c-v2-pooled')
         if os.path.exists(vision_path):
-            self.vision_model = tf.saved_model.load(vision_path)
+            self.elixrc_model = tf.saved_model.load(vision_path)
             print(f"Loaded ELIXR C vision model from {vision_path}")
-            print(f"Vision model signatures: {list(self.vision_model.signatures.keys())}")
+            print(f"Vision model signatures: {list(self.elixrc_model.signatures.keys())}")
             # Inspect the signature to understand input/output structure
-            if 'serving_default' in self.vision_model.signatures:
-                sig = self.vision_model.signatures['serving_default']
+            if 'serving_default' in self.elixrc_model.signatures:
+                sig = self.elixrc_model.signatures['serving_default']
                 print(f"Vision model input: {sig.structured_input_signature}")
                 print(f"Vision model output: {sig.structured_outputs}")
         else:
@@ -137,62 +136,59 @@ class CXREmbeddingExtractor:
         
         return serialized
     
-    def get_image_embeddings(self, image_paths: list[str]) -> np.ndarray:
+    def get_image_embeddings(self, image_paths: list[str], max_workers: int = 4) -> list[dict[str, np.ndarray]]:
         """
-        Extract embeddings from images using the full pipeline:
-        1. ELIXR C vision encoder (image -> image features)
-        2. QFormer (image features + text -> embeddings)
-        
-        Args:
-            image_paths: List of paths to image files
-            
-        Returns:
-            Array of embeddings (n_images, embedding_dim)
+        Extract embeddings with parallel preprocessing (I/O bound operations).
+        Model inference is serialized to avoid GPU conflicts.
         """
-        if self.vision_model is None:
-            raise ValueError("ELIXR C vision model not loaded. Cannot extract image embeddings.")
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = [executor.submit(self._process_single_image, path) for path in image_paths]
+            embeddings_list = [future.result() for future in futures]
+        return embeddings_list
+    
+    def _process_single_image(self, image_path: str) -> dict[str, np.ndarray]:
+        """Process a single image (thread-safe)."""
+        # Preprocessing can happen in parallel
+        serialized_tf_example = self._prepare_image_for_elixr(image_path)
         
-        embeddings_list = []
-        
-        for image_path in image_paths:
+        # Model calls must be serialized (GPU access)
+        with self.model_lock:
             # Step 1: Convert image to TF Example format
-            serialized_tf_example = self._prepare_image_for_elixr(image_path)
+            # serialized_tf_example = self._prepare_image_for_elixr(image_path) # This line is now redundant
             
             # Step 2: Get image features from ELIXR C vision encoder
-            # Use the serving_default signature, similar to QFormer
-            vision_output = self.vision_model.signatures['serving_default'](
-                input_example=tf.constant([serialized_tf_example])
+            vision_output = self.elixrc_model.signatures['serving_default'](
+                input_example=tf.constant([serialized_tf_example])  # Shape: (1,)
             )
-            image_feature = vision_output['feature_maps_0'].numpy()
-            # Ensure correct shape for QFormer (1, 8, 8, 1376)
-            if len(image_feature.shape) == 2:
-                # If it's 2D, might need to reshape
-                # This depends on the actual ELIXR C output shape
-                print(f"Warning: Image feature shape {image_feature.shape} is 2D, expected 4D (1, 8, 8, 1376)")
-            elif image_feature.shape != (1, 8, 8, 1376):
-                print(f"Warning: Image feature shape {image_feature.shape} doesn't match expected (1, 8, 8, 1376)")
-                # Try to reshape if dimensions match
+            image_feature = vision_output['feature_maps_0'].numpy()  # Shape: (1, 8, 8, 1376)
+            
+            # Ensure correct shape
+            if image_feature.shape != (1, 8, 8, 1376):
                 if image_feature.size == 8 * 8 * 1376:
                     image_feature = image_feature.reshape(1, 8, 8, 1376)
+                else:
+                    raise ValueError(f"Unexpected image feature shape: {image_feature.shape}")
             
-            # Step 3: Prepare QFormer input with image features
-            # Use zeros for text input (image-only mode)
+            # Step 3: Prepare QFormer input (batch size must be 1)
             tokens = np.zeros([1, 1, 128], dtype=np.int32)
             paddings = np.ones([1, 1, 128], dtype=np.float32)
             
+            # Pass as TensorFlow tensors (not lists!)
             qformer_input = {
-                'image_feature': image_feature.tolist(),
-                'ids': tokens.tolist(),
-                'paddings': paddings.tolist(),
+                'image_feature': tf.constant(image_feature, dtype=tf.float32),
+                'ids': tf.constant(tokens, dtype=tf.int32),
+                'paddings': tf.constant(paddings, dtype=tf.float32),
             }
             
             # Step 4: Get final embeddings from QFormer
             qformer_output = self.qformer_model.signatures['serving_default'](**qformer_input)
-            # contrastive_img_emb    
-            embedding = qformer_output['all_contrastive_img_emb'].numpy()
-            embeddings_list.append(embedding[0])
-        
-        return np.array(embeddings_list)
+            
+            # Extract embeddings
+            embedding = {
+                'contrastive_img_emb': qformer_output['contrastive_img_emb'].numpy(),
+                'all_contrastive_img_emb': qformer_output['all_contrastive_img_emb'].numpy(),
+            }
+            return embedding
     
     def get_text_embeddings(self, texts: list[str]) -> np.ndarray:
         """
@@ -230,6 +226,9 @@ if __name__ == "__main__":
     extractor = CXREmbeddingExtractor(model_dir='./cxr_models')
     
     # Extract embeddings from images
-    image_paths = ['Chest_Xray_PA_3-8-2010.png']
-    embeddings = extractor.get_image_embeddings(image_paths)
-    print(f"Extracted embeddings shape: {embeddings.shape}")
+    image_paths = ['Chest_Xray_PA_3-8-2010.png', 'Chest_Xray_PA_3-8-2010.png', 'Chest_Xray_PA_3-8-2010.png', 'Chest_Xray_PA_3-8-2010.png', 'Chest_Xray_PA_3-8-2010.png', 'Chest_Xray_PA_3-8-2010.png', 'Chest_Xray_PA_3-8-2010.png', 'Chest_Xray_PA_3-8-2010.png', 'Chest_Xray_PA_3-8-2010.png', 'Chest_Xray_PA_3-8-2010.png']
+    embeddings = extractor.get_image_embeddings(image_paths, max_workers=5)
+
+    for embedding in embeddings:
+        print(f"Extracted embeddings shape: {embedding['contrastive_img_emb'].shape}")
+        print(f"Extracted embeddings shape: {embedding['all_contrastive_img_emb'].shape}")

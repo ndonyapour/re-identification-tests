@@ -1,3 +1,6 @@
+import warnings
+warnings.filterwarnings('ignore', category=UserWarning, message='.*Failed to initialize NumPy.*')
+
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
@@ -8,7 +11,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import joblib
 import os
-from calssifier_utils import prepare_features_Nyxus, prepare_features_BrainAIC
+from calssifier_utils import prepare_features_Nyxus, prepare_features_BrainAIC, prepare_features_Pyradiomics
 from sklearn.model_selection import StratifiedGroupKFold
 from sklearn.ensemble import VotingClassifier
 from sklearn.svm import SVC
@@ -291,6 +294,84 @@ def train_rf_nyxus(features_group: str = "All", random_states: list[int] = [42, 
     print(f"Test accuracy: {np.mean(accuracies['test_acc']):.4f} ± {np.std(accuracies['test_acc']):.4f}")
 
 
+def train_rf_pyradiomics(features_group: str = "All", random_states: list[int] = [42, 123, 1234]):
+    """
+    Train Random Forest on Nyxus features.
+    """
+    print("Training Random Forest with Nyxus features...")
+    
+    # Paths to your data
+    image_dir = "/home/ubuntu/data/ADNI_dataset/BrainIAC_processed/images/"
+    features_dir = "/home/ubuntu/data/ADNI_dataset/Pyradiomics_features/"
+    info_csv = "/home/ubuntu/data/ADNI_dataset/ADNI1_Complete_3Yr_1.5T_diagonosis.xlsx"
+    
+    accuracies = {'train_acc': [], 'oob_score': [], 'test_acc': []}
+    all_classification_reports = []
+    for random_state in random_states:
+        # Prepare data
+
+        print(f"Training with random state: {random_state}")
+        print("Preparing and splitting data...")
+        np.random.seed(random_state)
+        X_train, X_val, X_test, y_train, y_val, y_test, class_names, patient_ids_train, patient_ids_val, patient_ids_test = prepare_features_Pyradiomics(
+            features_dir, image_dir, info_csv, 
+            features_group=features_group, 
+            random_state=random_state, 
+            test_size=0.2,
+            classes=['CN', 'MCI', 'AD']
+        )
+
+        X_train = np.concatenate((X_train, X_val), axis=0)
+        y_train = np.concatenate((y_train, y_val), axis=0)
+        patient_ids_train = np.concatenate((patient_ids_train, patient_ids_val), axis=0)
+   
+        print(f"Training set: {X_train.shape[0]} samples, {len(np.unique(patient_ids_train))} patients")
+        print(f"Test set: {X_test.shape[0]} samples, {len(np.unique(patient_ids_test))} patients")
+        print(f"Classes: {class_names}")
+    
+        # Get feature names (you might need to modify this based on your feature extraction)
+        # For now, create generic feature names
+        feature_names = [f"Feature_{i}" for i in range(X_train.shape[1])]
+    
+
+        # Hyperparameter search
+        best_params, best_rf_model = search_best_rf_model(
+            X_train, y_train, patient_ids_train, random_state=random_state, cv_folds=5
+        )
+        # Train final model with the RF model
+        rf_model, metrics = train_random_forest(
+            X_train, y_train, best_params, random_state
+        )
+
+        # Create models directory if it doesn't exist
+        os.makedirs("./models", exist_ok=True)
+
+        # Save the model using joblib
+        # joblib.dump(rf_model, f"./models/rf_model_Nyxus_{features_group}_{random_state}.pkl")
+        # print(f"Model saved to: ./models/rf_model_Nyxus_{features_group}_{random_state}.pkl")
+        X_test = X_test.astype(np.float32)
+        test_predictions = rf_model.predict(X_test)
+        test_accuracy = np.mean(test_predictions == y_test)
+
+        # Store results with correct metrics
+        accuracies['train_acc'].append(metrics['train_acc'])
+        accuracies['oob_score'].append(metrics['oob_score'])
+        accuracies['test_acc'].append(test_accuracy)
+        
+        from sklearn.metrics import classification_report
+        report_dict = classification_report(y_test, test_predictions, target_names=class_names, output_dict=True)
+        all_classification_reports.append(report_dict)
+
+    # Calculate averaged classification report
+    averaged_report = calculate_averaged_classification_report(all_classification_reports, class_names)
+    print_averaged_classification_report(averaged_report, class_names, len(random_states))
+    
+    # Fix the final summary - remove val_acc since it doesn't exist
+    print(f"\nTraining accuracy: {np.mean(accuracies['train_acc']):.4f} ± {np.std(accuracies['train_acc']):.4f}")
+    print(f"OOB score: {np.mean(accuracies['oob_score']):.4f} ± {np.std(accuracies['oob_score']):.4f}")
+    print(f"Test accuracy: {np.mean(accuracies['test_acc']):.4f} ± {np.std(accuracies['test_acc']):.4f}")
+
+
 def train_rf_brainiac(random_states: list[int] = [42, 123, 1234]):
     """
     Train Random Forest on BrainIAC features.
@@ -363,7 +444,7 @@ def train_rf_brainiac(random_states: list[int] = [42, 123, 1234]):
  
 # Update the main function
 if __name__ == "__main__":
-    train_rf_nyxus(features_group="All", random_states=[42])
-    #train_rf_brainiac(random_states=[42, 123, 1007])
-
+    train_rf_nyxus(features_group="Texture", random_states=[42, 123, 1234])
+    # train_rf_brainiac(random_states=[42, 123, 1007])
+    # train_rf_pyradiomics(features_group="Shape", random_states=[42, 123, 1234])
 
