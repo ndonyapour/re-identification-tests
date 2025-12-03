@@ -30,6 +30,7 @@ dependencies = [
     "tensorflow>=2.18.1",
     "tensorflow-text>=2.18.1",
     "tensorflow-hub>=0.16.1",
+    "boto3>=1.42.1",
 ]
 
 [build-system]
