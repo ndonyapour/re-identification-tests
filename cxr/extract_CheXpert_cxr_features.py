@@ -190,12 +190,12 @@ if __name__ == "__main__":
     
     # Configuration
     s3_base = 's3://n3c-medical-imaging/ndonyapour/chexpertchestxrays-u20210408'
-    output_base = './CheXpert_embeddings'
+    output_base = '/home/ubuntu/data/Chest_Xray_Images/CheXpert_cxr_embeddings'
     min_studies = 2  # Patients must have at least 2 studies with frontal images
     
     batches = [
-        'chexpert_v1.0_batch_2_train',
-        # 'chexpert_v1.0_batch_3_train',
+        #'chexpert_v1.0_batch_2_train',
+        'chexpert_v1.0_batch_3_train',
         # 'chexpert_v1.0_batch_4_train',
     ]
     

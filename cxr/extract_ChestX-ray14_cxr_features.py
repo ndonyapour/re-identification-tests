@@ -15,7 +15,7 @@ if __name__ == "__main__":
     extractor = CXREmbeddingExtractor(model_dir='./cxr_models')
     
     s3_prefix = 's3://n3c-medical-imaging/ndonyapour/ChestXray-NIHCC'
-    output_dir = './ChestX-ray14_embeddings'
+    output_dir = '/home/ubuntu/data/Chest_Xray_Images/ChestX-ray14_cxr_embeddings'
     for i in range(2, 13):
         subdir = os.path.join(s3_prefix, f"images_{i:02d}")
         print(f"Processing {subdir}")

@@ -253,8 +253,8 @@ def main():
     zip_files = [
         #('CheXpert-v1.0 batch 1 (validate & csv).zip', 'chexpert_v1.0_batch_1_validate'),
         #('CheXpert-v1.0 batch 2 (train 1).zip', 'chexpert_v1.0_batch_2_train'),
-        ('CheXpert-v1.0 batch 3 (train 2).zip', 'chexpert_v1.0_batch_3_train'),
-        # ('CheXpert-v1.0 batch 4 (train 3).zip', 'chexpert_v1.0_batch_4_train'),
+        #('CheXpert-v1.0 batch 3 (train 2).zip', 'chexpert_v1.0_batch_3_train'),
+        ('CheXpert-v1.0 batch 4 (train 3).zip', 'chexpert_v1.0_batch_4_train'),
     ]
     
     total_extracted = 0

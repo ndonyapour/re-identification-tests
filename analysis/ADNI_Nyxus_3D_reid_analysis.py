@@ -41,7 +41,7 @@ if __name__ == "__main__":
                 f"{results['r_at_10_patient']}%",
                 f"{results['patient_ap']:.1%}"
                 ]
-
+            import pdb; pdb.set_trace()
             results_lists.append(results_list)
 
     headers = [

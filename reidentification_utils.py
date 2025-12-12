@@ -207,7 +207,7 @@ def get_subject_and_date(filename: str) -> tuple[str, str]:
 
 
 def find_closest_neighbors(features: np.ndarray, 
-                            ADNI_metadata: pd.DataFrame, 
+                            metadata: pd.DataFrame, 
                             n_neighbors: int = 10, 
                             exclude_same_date: bool = False, 
                             distance_threshold: float = -1.0,
@@ -230,9 +230,18 @@ def find_closest_neighbors(features: np.ndarray,
     Returns:
         list: Metrics list [features_name, standardized, n_features, r_at_1_img, r_at_10_img, r_at_1_patient, r_at_10_patient]
     """
-    patient_id = ADNI_metadata['patient_id'].values
-    study_date = ADNI_metadata['scan_date'].values
-    file_names = ADNI_metadata['file_name'].values
+    patient_id = metadata['patient_id'].values
+    study_date = metadata['scan_date'].values
+    file_names = metadata['file_name'].values
+    
+    # Calculate images per patient statistics
+    images_per_patient = defaultdict(int)
+    for pid in patient_id:
+        images_per_patient[pid] += 1
+    counts = list(images_per_patient.values())
+    min_imgs_per_patient = min(counts)
+    max_imgs_per_patient = max(counts)
+    avg_imgs_per_patient = sum(counts) / len(counts)
     
     if standardize:
         features = StandardScaler().fit_transform(features)
@@ -334,6 +343,8 @@ def find_closest_neighbors(features: np.ndarray,
     print(f"Number of unique patients: {n_patients}")
     print(f"Number of processed patients: {n_processed_patients}")
     print(f"Number of unique dates: {len(set(study_date))}")
+    print(f"Number of features: {features.shape[1]}")
+    print(f"Images per patient: min={min_imgs_per_patient}, max={max_imgs_per_patient}, avg={avg_imgs_per_patient:.1f}")
     print(f"\nImage-level metrics:")
     print(f"R@1: {r_at_1_img:.1f}%")
     print(f"R@10: {r_at_10_img:.1f}%")
@@ -705,6 +716,149 @@ def find_closest_neighbors_Pyradiomics(features_dir: str, image_dir: str, info_c
 def print_results(results: List[List[str]], headers: List[str]) -> None:
     table = tabulate(results, headers=headers, tablefmt="fancy_grid")
     print(table)
+
+
+def find_closest_neighbors_ChestXray14(
+    features_dir: str,
+    info_csv: str,
+    n_neighbors: int = 10,
+    features_name: str = "contrastive_img_emb",
+    standardize: bool = False,
+    exclude_same_date: bool = False,
+    distance_threshold: float = -1.0,
+    min_images_per_patient: int = 2,
+    output_dir: str | None = None
+) -> dict:
+    """
+    Find the closest neighbors for each image in NIH ChestXray14 dataset.
+    
+    Args:
+        features_dir: Directory containing .npz embedding files
+        info_csv: Path to CSV with 'filename' and 'pat_id' columns
+        n_neighbors: Number of neighbors to find
+        standardize: Whether to standardize features
+        exclude_same_date: Whether to exclude matches from same date (not used for ChestXray14)
+        distance_threshold: Only keep matches with distance <= threshold (-1 to disable)
+        min_images_per_patient: Minimum images per patient required (filters patients with fewer)
+        output_dir: Directory to save matches.csv (if None, don't save)
+        
+    Returns:
+        dict: Dictionary containing metrics
+    """
+    # Load patient info
+    px_info = pd.read_csv(info_csv)
+    if 'filename' not in px_info.columns or 'pat_id' not in px_info.columns:
+        raise ValueError("Info CSV must contain 'filename' and 'pat_id' columns")
+    
+    # Create lookup dictionary
+    filename_to_patient = dict(zip(px_info['filename'], px_info['pat_id']))
+    
+    # Load embeddings
+    metadata = {
+        'file_name': [],
+        'patient_id': [],
+        'scan_date': []  # ChestXray14 doesn't have dates, use placeholder
+    }
+    features_list = []
+    
+    subfolders = os.listdir(features_dir)
+  
+    for subfolder in subfolders:
+        subfolder_path = os.path.join(features_dir, subfolder)
+        npz_files = sorted([f for f in os.listdir(subfolder_path) if f.endswith('.npz')])   
+        for npz_file in npz_files:
+            npz_path = os.path.join(features_dir, subfolder, npz_file)
+
+            # Load embedding
+            data = np.load(npz_path)
+            # Get the contrastive image embedding
+            if features_name in data:
+                embedding = data[features_name].flatten()
+            else:
+                print(f"Warning: '{features_name}' not found in {npz_file}, skipping")
+                continue
+            
+            # Get original filename (remove .npz, add .png)
+            original_filename = npz_file.replace('.npz', '.png')
+            
+            # Look up patient ID
+            if original_filename in filename_to_patient:
+                patient_id = filename_to_patient[original_filename]
+            else:
+                # Try without extension changes
+                base_name = npz_file.replace('.npz', 'png')
+                if base_name in filename_to_patient:
+                    patient_id = filename_to_patient[base_name]
+                    original_filename = base_name
+                else:
+                    print(f"Warning: Patient ID not found for {npz_file}, skipping")
+                    continue    
+            
+            metadata['file_name'].append(original_filename)
+            metadata['patient_id'].append(patient_id)
+            metadata['scan_date'].append('unknown')
+            features_list.append(embedding)
+        
+        if not features_list:
+            raise ValueError("No valid embeddings found")
+    
+    features = np.array(features_list)
+    metadata_df = pd.DataFrame(metadata)
+    
+    print(f"Loaded {len(features)} embeddings with {features.shape[1]} dimensions")
+    print(f"Unique patients (before filtering): {metadata_df['patient_id'].nunique()}")
+    
+    # Filter patients with minimum number of images
+    if min_images_per_patient > 1:
+        # Count images per patient
+        patient_counts = metadata_df['patient_id'].value_counts()
+        valid_patients = patient_counts[patient_counts >= min_images_per_patient].index
+        
+        # Filter to keep only valid patients
+        mask = metadata_df['patient_id'].isin(valid_patients)
+        metadata_df = metadata_df[mask].reset_index(drop=True)
+        features = features[mask]
+        
+        print(f"Filtered to patients with >= {min_images_per_patient} images")
+        print(f"Remaining: {len(features)} images, {metadata_df['patient_id'].nunique()} patients")
+    
+    # Find closest neighbors
+    rate_results = find_closest_neighbors(
+        features, 
+        metadata_df, 
+        n_neighbors, 
+        exclude_same_date,
+        distance_threshold, 
+        features_name,  # Use actual feature name instead of hardcoded string
+        standardize, 
+        output_dir
+    )
+    
+    # Compute precision-recall if output_dir provided
+    if output_dir:
+        matches_file = 'matches_diff_dates.csv' if exclude_same_date else 'matches.csv'
+        ap_results = compute_precision_recall(
+            os.path.join(output_dir, matches_file), 
+            info_csv, 
+            output_dir
+        )
+    else:
+        ap_results = {'image_ap': 0.0, 'patient_ap': 0.0}
+    
+    # Combine results
+    combined_results = {
+        'features_name': rate_results[0],
+        'standardized': rate_results[1],
+        'n_features': rate_results[2],
+        'r_at_1_img': float(rate_results[3].strip('%')),
+        'r_at_10_img': float(rate_results[4].strip('%')),
+        'image_ap': ap_results['image_ap'],
+        'r_at_1_patient': float(rate_results[5].strip('%')),
+        'r_at_10_patient': float(rate_results[6].strip('%')),
+        'patient_ap': ap_results['patient_ap'],
+    }
+    
+    return combined_results
 
 
 def compute_precision_recall(matches_csv: str, info_csv: str, output_dir: str) -> dict:
